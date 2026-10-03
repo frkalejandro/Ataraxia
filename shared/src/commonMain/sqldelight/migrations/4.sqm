@@ -1,0 +1,6 @@
+CREATE TABLE CompletedFocusBlock (
+    id TEXT NOT NULL PRIMARY KEY,
+    date TEXT NOT NULL,
+    durationSeconds INTEGER NOT NULL,
+    completedAt INTEGER NOT NULL
+);

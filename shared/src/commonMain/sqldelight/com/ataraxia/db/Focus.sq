@@ -1,0 +1,13 @@
+CREATE TABLE CompletedFocusBlock (
+    id TEXT NOT NULL PRIMARY KEY,
+    date TEXT NOT NULL,
+    durationSeconds INTEGER NOT NULL,
+    completedAt INTEGER NOT NULL
+);
+
+totalForDate:
+SELECT coalesce(sum(durationSeconds), 0) FROM CompletedFocusBlock WHERE date = ?;
+
+recordBlock:
+INSERT OR IGNORE INTO CompletedFocusBlock(id, date, durationSeconds, completedAt)
+VALUES (?, ?, ?, ?);

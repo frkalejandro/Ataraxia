@@ -24,6 +24,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.koin.koinScreenModel
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
+import com.ataraxia.ui.ExerciseTab
+import com.ataraxia.ui.FocusTab
+import com.ataraxia.ui.JournalTab
+import com.ataraxia.ui.StateTab
+import com.ataraxia.ui.SleepTab
 import com.ataraxia.domain.model.*
 import kotlinx.datetime.*
 
@@ -32,6 +38,7 @@ class DashboardScreen : Screen {
     override fun Content() {
         val vm: DashboardViewModel = koinScreenModel()
         val state by vm.state.collectAsState()
+        val navigator = LocalTabNavigator.current
 
         if (state.isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -77,11 +84,68 @@ class DashboardScreen : Screen {
 
             // ── Sueño ──────────────────────────────
             item { SectionHeader("Sueño") }
-            item { SleepCard(state.sleepEntry, state.sleepGoal) }
+            item { SleepCard(state.sleepEntry, state.sleepGoal, onClick = { navigator.current = SleepTab }) }
+
+            item { SectionHeader("Ejercicio") }
+            item {
+                DashboardShortcutCard(Icons.Default.FitnessCenter,
+                    if (state.exercisedToday) "Descansa" else "Es hora de ejercitarte",
+                    if (state.exercisedToday) "Ya registraste ejercicio hoy" else "Dedica un momento a moverte",
+                    Color(0xFF40B88E), onClick = { navigator.current = ExerciseTab })
+            }
+            item { SectionHeader("Enfoque") }
+            item {
+                DashboardShortcutCard(Icons.Default.Timer,
+                    "${formatFocusTotal(state.focusSecondsToday)} de concentración hoy",
+                    "Tiempo registrado en bloques completados", Color(0xFF6C63FF),
+                    onClick = { navigator.current = FocusTab })
+            }
+            item { SectionHeader("Diario") }
+            item {
+                DashboardShortcutCard(Icons.Default.Book, "¿En qué estás pensando hoy?",
+                    "Abre tu diario y escribe", Color(0xFFF5A623),
+                    onClick = { navigator.current = JournalTab })
+            }
+            item { SectionHeader("Estado") }
+            item {
+                DashboardShortcutCard(Icons.Default.MonitorHeart, "Monitorea tu estado hoy",
+                    "Registra cómo te sientes", Color(0xFFE05252),
+                    onClick = { navigator.current = StateTab })
+            }
 
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
+}
+
+@Composable
+private fun DashboardShortcutCard(
+    icon: ImageVector,
+    message: String,
+    detail: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(0.dp)) {
+        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(40.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(message, style = MaterialTheme.typography.titleSmall)
+                Text(detail, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+internal fun formatFocusTotal(seconds: Long): String {
+    val minutes = seconds.coerceAtLeast(0) / 60
+    return if (minutes < 60) "$minutes min" else "${minutes / 60} h ${minutes % 60} min"
 }
 
 // ── Saludo ─────────────────────────────────────
@@ -244,8 +308,9 @@ fun HabitChip(status: HabitWithStatus, onClick: () -> Unit) {
 // ── Sueño ──────────────────────────────────────
 
 @Composable
-fun SleepCard(entry: SleepEntry?, goal: SleepGoal?) {
+fun SleepCard(entry: SleepEntry?, goal: SleepGoal?, onClick: () -> Unit) {
     Card(
+        onClick   = onClick,
         modifier  = Modifier.fillMaxWidth(),
         shape     = RoundedCornerShape(20.dp),
         colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -263,7 +328,7 @@ fun SleepCard(entry: SleepEntry?, goal: SleepGoal?) {
             )
             Spacer(Modifier.width(16.dp))
             if (entry == null) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("Sin registro de sueño", style = MaterialTheme.typography.titleSmall)
                     val goalText = if (goal != null) {
                         val wakeStr   = formatTime(goal.wakeTime.hour, goal.wakeTime.minute)
@@ -277,7 +342,7 @@ fun SleepCard(entry: SleepEntry?, goal: SleepGoal?) {
                     )
                 }
             } else {
-                Column {
+                Column(Modifier.weight(1f)) {
                     val dH = entry.durationMinutes / 60
                     val dM = entry.durationMinutes % 60
                     Text(
@@ -296,6 +361,9 @@ fun SleepCard(entry: SleepEntry?, goal: SleepGoal?) {
                     }
                 }
             }
+            Spacer(Modifier.width(16.dp))
+            Icon(Icons.Default.ChevronRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

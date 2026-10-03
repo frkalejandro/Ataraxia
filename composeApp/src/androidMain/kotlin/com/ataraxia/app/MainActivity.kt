@@ -16,6 +16,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.ataraxia.di.sharedModules
 import com.ataraxia.notifications.AndroidHabitNotificationScheduler
 import com.ataraxia.notifications.AndroidAgendaNotificationScheduler
+import com.ataraxia.notifications.AndroidTimerNotificationScheduler
+import com.ataraxia.notifications.AndroidStateNotificationScheduler
 import com.ataraxia.ui.AtaraxiaApp
 import com.ataraxia.ui.viewModelModule
 import org.koin.android.ext.koin.androidContext
@@ -37,27 +39,34 @@ class AtaraxiaApplication : Application() {
             )
         }
 
-        // Activa los recordatorios diarios de hábitos al iniciar la aplicación.
-        AndroidHabitNotificationScheduler(this).scheduleDailyReminders()
+        // Respeta los horarios que el usuario dejó habilitados.
+        AndroidHabitNotificationScheduler(this).rescheduleSavedReminders()
         AndroidAgendaNotificationScheduler(this).scheduleDailyReminders()
+        AndroidStateNotificationScheduler(this).scheduleDailyReminder()
     }
 }
 
 class MainActivity : ComponentActivity() {
     private var agendaRequest by mutableStateOf(0)
+    private var stateRequest by mutableStateOf(0)
+    private var timerRequest by mutableStateOf(0)
+    private var requestedTimer by mutableStateOf<String?>(null)
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* El usuario decide si permite o no las notificaciones. */ }
+    ) { if (it) AndroidTimerNotificationScheduler(this).rescheduleSavedTimers() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
         if (intent.getBooleanExtra("open_agenda", false)) agendaRequest++
+        if (intent.getBooleanExtra("open_state", false)) stateRequest++
+        readTimerIntent(intent)
 
         setContent {
-            AtaraxiaApp(agendaRequest = agendaRequest)
+            AtaraxiaApp(agendaRequest = agendaRequest, timerRequest = timerRequest,
+                requestedTimer = requestedTimer, stateRequest = stateRequest)
         }
     }
 
@@ -65,6 +74,20 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra("open_agenda", false)) agendaRequest++
+        if (intent.getBooleanExtra("open_state", false)) stateRequest++
+        readTimerIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AndroidTimerNotificationScheduler(this).rescheduleSavedTimers()
+    }
+
+    private fun readTimerIntent(intent: Intent) {
+        intent.getStringExtra("open_timer")?.let {
+            requestedTimer = it
+            timerRequest++
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {

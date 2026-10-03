@@ -14,11 +14,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ataraxia.domain.model.FocusPhase
 import com.ataraxia.domain.model.FocusTimer
+import com.ataraxia.domain.repository.FocusRepository
+import com.ataraxia.notifications.*
+import org.koin.compose.koinInject
+import com.ataraxia.ui.TimerNotificationHint
 import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 
-class FocusController(initial: FocusTimer) {
-    var timer by mutableStateOf(initial)
+class FocusController(
+    initial: FocusTimer,
+    private val notifications: TimerNotificationScheduler,
+    private val onFocusCompleted: (FocusTimer) -> Unit = {},
+) {
+    private var currentTimer by mutableStateOf(initial)
+    var timer: FocusTimer
+        get() = currentTimer
+        set(value) {
+            val previous = currentTimer
+            if (value.completedSessions > previous.completedSessions) onFocusCompleted(previous)
+            currentTimer = value
+            // Running ticks only change the display; persist deadlines and user actions.
+            if (previous.deadlineMillis != value.deadlineMillis || value.deadlineMillis == null) {
+                if (previous != value) {
+                    notifications.saveFocus(value)
+                    notifications.update(TimerKind.FOCUS, value.notification())
+                }
+            }
+        }
     var intention by mutableStateOf("")
 }
 
@@ -27,16 +49,25 @@ val LocalFocusController = staticCompositionLocalOf<FocusController> { error("Fa
 /** Lives above the tabs, preserving a running session while navigating. */
 @Composable
 fun rememberFocusController(): FocusController {
+    val notifications: TimerNotificationScheduler = koinInject()
+    val focusRepository: FocusRepository = koinInject()
+    val recordCompletion: (FocusTimer) -> Unit = { timer ->
+        focusRepository.recordElapsedBlock(timer, Clock.System.now().toEpochMilliseconds())
+    }
     val saver = listSaver<FocusController, Any>(
         save = { listOf(it.timer.focusMinutes, it.timer.phase.name, it.timer.remainingSeconds,
             it.timer.deadlineMillis ?: -1L, it.timer.completedSessions, it.timer.awaitingNext, it.intention) },
         restore = { FocusController(FocusTimer(it[0] as Int, FocusPhase.valueOf(it[1] as String),
-            it[2] as Int, (it[3] as Long).takeIf { value -> value >= 0 }, it[4] as Int, it[5] as Boolean))
+            it[2] as Int, (it[3] as Long).takeIf { value -> value >= 0 }, it[4] as Int, it[5] as Boolean), notifications, recordCompletion)
             .apply { intention = it[6] as String } },
     )
-    val controller = rememberSaveable(saver = saver) { FocusController(FocusTimer()) }
+    val controller = rememberSaveable(saver = saver) {
+        FocusController(notifications.restoreFocus() ?: FocusTimer(), notifications, recordCompletion)
+    }
     LaunchedEffect(controller) {
+        notifications.update(TimerKind.FOCUS, controller.timer.notification())
         while (true) {
+            notifications.checkDue()
             controller.timer = controller.timer.tick(Clock.System.now().toEpochMilliseconds())
             delay(250)
         }
@@ -90,5 +121,6 @@ fun FocusScreen() {
         Text("Método Pomodoro: 25 minutos de enfoque, 5 de descanso y una pausa de 15 minutos cada 4 sesiones. Tú decides cuándo iniciar cada bloque.")
         Text("El temporizador continúa al cambiar de sección. Al volver a la app se actualiza el tiempo restante.",
             style = MaterialTheme.typography.bodySmall)
+        TimerNotificationHint()
     }
 }

@@ -1,7 +1,11 @@
 package com.ataraxia.domain.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class FocusPhase { FOCUS, SHORT_BREAK, LONG_BREAK }
 
+@Serializable
 data class FocusTimer(
     val focusMinutes: Int = 25,
     val phase: FocusPhase = FocusPhase.FOCUS,

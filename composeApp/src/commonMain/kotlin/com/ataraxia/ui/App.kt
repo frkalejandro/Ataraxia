@@ -22,14 +22,26 @@ import com.ataraxia.ui.sleep.SleepScreen
 import com.ataraxia.ui.state.StateScreen
 import com.ataraxia.ui.focus.*
 import com.ataraxia.ui.exercise.ExerciseScreen
+import com.ataraxia.domain.repository.WorkoutRepository
+import com.ataraxia.notifications.*
+import org.koin.compose.koinInject
 
 @Composable
-fun AtaraxiaApp(agendaRequest: Int = 0) {
+fun AtaraxiaApp(agendaRequest: Int = 0, timerRequest: Int = 0, requestedTimer: String? = null, stateRequest: Int = 0) {
     val focus = rememberFocusController()
+    val workouts: WorkoutRepository = koinInject()
+    val notifications: TimerNotificationScheduler = koinInject()
+    LaunchedEffect(workouts) {
+        workouts.observeActive().collect { notifications.update(TimerKind.EXERCISE, it?.notification()) }
+    }
     CompositionLocalProvider(LocalFocusController provides focus) {
     MaterialTheme(colorScheme = ataraxiaColorScheme()) {
         TabNavigator(DashboardTab) { navigator ->
             LaunchedEffect(agendaRequest) { if (agendaRequest > 0) navigator.current = AgendaTab }
+            LaunchedEffect(stateRequest) { if (stateRequest > 0) navigator.current = StateTab }
+            LaunchedEffect(timerRequest) {
+                if (timerRequest > 0) navigator.current = if (requestedTimer == TimerKind.EXERCISE.name) ExerciseTab else FocusTab
+            }
             val snackbar = remember { SnackbarHostState() }
             LaunchedEffect(focus.timer.awaitingNext) {
                 if (focus.timer.awaitingNext) {

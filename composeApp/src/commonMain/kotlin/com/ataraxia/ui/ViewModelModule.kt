@@ -12,7 +12,7 @@ import org.koin.dsl.module
 val viewModelModule = module {
     factory { ExerciseViewModel(get()) }
     factory {
-        DashboardViewModel(get(), get(), get(), get(), get(), get(), get())
+        DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get())
     }
     factory {
         HabitsViewModel(get(), get(), get(), get())

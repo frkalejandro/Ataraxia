@@ -13,6 +13,7 @@ val databaseModule = module {
 }
 
 val repositoryModule = module {
+    single<FocusRepository> { FocusRepositoryImpl(get()) }
     single<WorkoutRepository> { WorkoutRepositoryImpl(get()) }
     single<HabitRepository>    { HabitRepositoryImpl(get()) }
     single<SleepRepository>    { SleepRepositoryImpl(get()) }

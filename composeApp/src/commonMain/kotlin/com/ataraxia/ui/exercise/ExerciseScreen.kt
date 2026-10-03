@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.koin.koinScreenModel
 import com.ataraxia.domain.model.*
+import com.ataraxia.ui.TimerNotificationHint
 import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
@@ -237,8 +238,9 @@ private fun ActiveWorkoutCard(active: ActiveWorkout, busy: Boolean, vm: Exercise
                 Button(onClick = { confirmComplete = true }, enabled = !busy && (!timed || remaining == 0)) { Text("Marcar como realizada") }
                 TextButton(onClick = { confirmDiscard = true }, enabled = !busy) { Text("Descartar sesión") }
             }
-            Text("La sesión se conserva al salir de la app. El contador se actualiza al volver; no emite una alarma con la app cerrada.",
+            Text("La sesión se conserva al salir de la app. El contador se actualiza al volver.",
                 style = MaterialTheme.typography.bodySmall)
+            if (timed) TimerNotificationHint()
         }
     }
     if (confirmComplete) ConfirmDialog("Guardar sesión realizada", "Confirma que realizaste los ejercicios indicados. Se agregarán a tu último día de ejercicio.",

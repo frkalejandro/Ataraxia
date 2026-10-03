@@ -32,6 +32,9 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.koin.koinScreenModel
 import com.ataraxia.domain.model.*
 import com.ataraxia.domain.usecase.*
+import com.ataraxia.notifications.HabitNotificationSettings
+import com.ataraxia.notifications.HabitReminderTime
+import org.koin.compose.koinInject
 import com.ataraxia.ui.dashboard.parseColor
 import com.benasher44.uuid.uuid4
 import kotlinx.coroutines.flow.*
@@ -118,6 +121,8 @@ class HabitsScreen : Screen {
 
         // Tab seleccionada: 0=General, 1=Mañana, 2=Noche
         var selectedTab by remember { mutableIntStateOf(0) }
+        var showReminders by remember { mutableStateOf(false) }
+        val reminders: HabitNotificationSettings = koinInject()
         val tabs = listOf(
 
             Triple(HabitCategory.MORNING, "Por la mañana",  "☀️"),
@@ -127,7 +132,11 @@ class HabitsScreen : Screen {
 
         Scaffold(
             topBar = {
-                TopAppBar(title = { Text("Hábitos", fontWeight = FontWeight.SemiBold) })
+                TopAppBar(title = { Text("Hábitos", fontWeight = FontWeight.SemiBold) }, actions = {
+                    if (reminders.supported) IconButton(onClick = { showReminders = true }) {
+                        Icon(Icons.Default.Notifications, contentDescription = "Configurar recordatorios de hábitos")
+                    }
+                })
             },
             floatingActionButton = {
                 FloatingActionButton(
@@ -233,6 +242,29 @@ class HabitsScreen : Screen {
                     }
                 }
             }
+        }
+
+        if (showReminders) {
+            AlertDialog(onDismissRequest = { showReminders = false },
+                title = { Text("Recordatorios de hábitos") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Activa o desactiva cada horario. Los cambios se guardan al instante.")
+                        HabitReminderTime.entries.forEach { time ->
+                            var enabled by remember(time) { mutableStateOf(reminders.isEnabled(time)) }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(time.label, Modifier.weight(1f))
+                                Switch(checked = enabled, onCheckedChange = {
+                                    reminders.setEnabled(time, it)
+                                    enabled = it
+                                })
+                            }
+                        }
+                        Text("Los avisos necesitan el permiso de notificaciones de Android.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showReminders = false }) { Text("Listo") } })
         }
 
         if (state.showAddSheet) {

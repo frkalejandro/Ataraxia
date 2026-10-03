@@ -60,18 +60,28 @@ private val DAILY_HABIT_REMINDERS = listOf(
  */
 class AndroidHabitNotificationScheduler(
     context: Context,
-) {
+) : HabitNotificationSettings {
     private val appContext = context.applicationContext
     private val alarmManager =
         appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     private val preferences =
         appContext.getSharedPreferences(HABIT_PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun scheduleDailyReminders() {
-        preferences.edit()
-            .putBoolean(HABIT_KEY_ENABLED, true)
-            .apply()
+    override val supported = true
 
+    override fun isEnabled(time: HabitReminderTime): Boolean =
+        preferences.getBoolean("enabled_${time.id}", preferences.getBoolean(HABIT_KEY_ENABLED, true))
+
+    override fun setEnabled(time: HabitReminderTime, enabled: Boolean) {
+        preferences.edit().putBoolean("enabled_${time.id}", enabled).apply()
+        if (enabled) scheduleSingleReminder(time.id) else {
+            alarmManager.cancel(habitReminderPendingIntent(time.id))
+            (appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(habitNotificationId(time.id))
+        }
+    }
+
+    fun scheduleDailyReminders() {
         createHabitNotificationChannel(appContext)
         cancelPendingAlarms()
 
@@ -81,17 +91,19 @@ class AndroidHabitNotificationScheduler(
     }
 
     fun rescheduleSavedReminders() {
-        if (!preferences.getBoolean(HABIT_KEY_ENABLED, false)) return
         scheduleDailyReminders()
     }
 
     fun cancelDailyReminders() {
         cancelPendingAlarms()
-        preferences.edit().clear().apply()
+        HabitReminderTime.entries.forEach { setEnabled(it, false) }
     }
 
     /** Programa un recordatorio y lo deja preparado para su próxima ocurrencia. */
     internal fun scheduleSingleReminder(reminderId: Int) {
+        val time = HabitReminderTime.entries.firstOrNull { it.id == reminderId } ?: return
+        if (!isEnabled(time)) return
+        createHabitNotificationChannel(appContext)
         val reminder = DAILY_HABIT_REMINDERS.firstOrNull { it.id == reminderId }
             ?: return
 
@@ -159,8 +171,11 @@ class HabitReminderReceiver : BroadcastReceiver() {
         val reminder = DAILY_HABIT_REMINDERS.firstOrNull { it.id == reminderId }
             ?: return
 
+        val scheduler = AndroidHabitNotificationScheduler(context)
+        val time = HabitReminderTime.entries.first { it.id == reminderId }
+        if (!scheduler.isEnabled(time)) return
         showHabitNotification(context, reminder)
-        AndroidHabitNotificationScheduler(context).scheduleSingleReminder(reminder.id)
+        scheduler.scheduleSingleReminder(reminder.id)
     }
 }
 
