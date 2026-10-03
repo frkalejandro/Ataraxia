@@ -1,0 +1,54 @@
+CREATE TABLE ExerciseDefinition (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    area TEXT NOT NULL
+);
+
+CREATE TABLE SavedWorkout (
+    id TEXT NOT NULL PRIMARY KEY,
+    payload TEXT NOT NULL
+);
+
+CREATE TABLE CompletedWorkout (
+    id TEXT NOT NULL PRIMARY KEY,
+    completedAt INTEGER NOT NULL,
+    payload TEXT NOT NULL
+);
+
+CREATE TABLE CurrentWorkout (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    payload TEXT NOT NULL
+);
+
+selectExercises:
+SELECT * FROM ExerciseDefinition ORDER BY name COLLATE NOCASE;
+
+saveExercise:
+INSERT OR REPLACE INTO ExerciseDefinition(id, name, area) VALUES (?, ?, ?);
+
+deleteExercise:
+DELETE FROM ExerciseDefinition WHERE id = ?;
+
+selectRoutines:
+SELECT * FROM SavedWorkout;
+
+saveRoutine:
+INSERT OR REPLACE INTO SavedWorkout(id, payload) VALUES (?, ?);
+
+deleteRoutine:
+DELETE FROM SavedWorkout WHERE id = ?;
+
+selectSessions:
+SELECT * FROM CompletedWorkout ORDER BY completedAt DESC;
+
+saveSession:
+INSERT OR IGNORE INTO CompletedWorkout(id, completedAt, payload) VALUES (?, ?, ?);
+
+selectActive:
+SELECT * FROM CurrentWorkout WHERE id = 1;
+
+saveActive:
+INSERT OR REPLACE INTO CurrentWorkout(id, payload) VALUES (1, ?);
+
+clearActive:
+DELETE FROM CurrentWorkout;

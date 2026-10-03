@@ -1,0 +1,38 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Android
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+*.hprof
+
+# Firmas privadas
+*.jks
+*.keystore
+
+# Kotlin/Native / Apple
+xcuserdata/
+*.xcworkspace/
+
+# SQLDelight generado
+**/commonMain/db/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,55 @@
+CREATE TABLE SleepGoal (
+    id             TEXT    NOT NULL PRIMARY KEY,
+    bedtimeHour    INTEGER NOT NULL DEFAULT 22,
+    bedtimeMinute  INTEGER NOT NULL DEFAULT 30,
+    wakeHour       INTEGER NOT NULL DEFAULT 6,
+    wakeMinute     INTEGER NOT NULL DEFAULT 30,
+    targetHours    REAL    NOT NULL DEFAULT 8.0,
+    activeDays     TEXT    NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
+    isActive       INTEGER NOT NULL DEFAULT 1,
+    updatedAt      INTEGER NOT NULL
+);
+
+CREATE TABLE SleepEntry (
+    id              TEXT    NOT NULL PRIMARY KEY,
+    date            TEXT    NOT NULL UNIQUE,
+    bedtimeEpoch    INTEGER NOT NULL,
+    wakeEpoch       INTEGER NOT NULL,
+    durationMinutes INTEGER NOT NULL,
+    quality         INTEGER NOT NULL DEFAULT 3,
+    note            TEXT    NOT NULL DEFAULT '',
+    createdAt       INTEGER NOT NULL
+);
+
+CREATE INDEX idx_sleep_entry_date ON SleepEntry(date);
+
+selectSleepGoal:
+SELECT * FROM SleepGoal LIMIT 1;
+
+upsertSleepGoal:
+INSERT OR REPLACE INTO SleepGoal VALUES (?,?,?,?,?,?,?,?,?);
+
+selectSleepEntries:
+SELECT * FROM SleepEntry ORDER BY date DESC LIMIT :limit;
+
+selectSleepEntriesInRange:
+SELECT * FROM SleepEntry WHERE date BETWEEN :from AND :to ORDER BY date ASC;
+
+selectSleepEntryByDate:
+SELECT * FROM SleepEntry WHERE date = :date;
+
+upsertSleepEntry:
+INSERT OR REPLACE INTO SleepEntry(id, date, bedtimeEpoch, wakeEpoch, durationMinutes, quality, note, createdAt)
+VALUES (:id, :date, :bedtimeEpoch, :wakeEpoch, :durationMinutes, :quality, :note, :createdAt);
+
+deleteSleepEntry:
+DELETE FROM SleepEntry WHERE id = :id;
+
+avgDurationLastDays:
+SELECT AVG(durationMinutes) FROM SleepEntry WHERE date >= :since;
+
+avgQualityLastDays:
+SELECT AVG(CAST(quality AS REAL)) FROM SleepEntry WHERE date >= :since;
+
+countEntriesInRange:
+SELECT COUNT(*) FROM SleepEntry WHERE date BETWEEN :from AND :to;

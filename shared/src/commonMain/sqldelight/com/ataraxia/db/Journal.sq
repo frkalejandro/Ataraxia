@@ -1,0 +1,31 @@
+CREATE TABLE JournalEntry (
+    id        TEXT    NOT NULL PRIMARY KEY,
+    content   TEXT    NOT NULL,
+    mood      TEXT,
+    tags      TEXT    NOT NULL DEFAULT '[]',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+
+CREATE INDEX idx_journal_created ON JournalEntry(createdAt);
+
+selectAllEntries:
+SELECT * FROM JournalEntry ORDER BY createdAt DESC;
+
+selectEntryById:
+SELECT * FROM JournalEntry WHERE id = :id;
+
+insertEntry:
+INSERT INTO JournalEntry(id, content, mood, tags, createdAt, updatedAt)
+VALUES (:id, :content, :mood, :tags, :createdAt, :updatedAt);
+
+updateEntry:
+UPDATE JournalEntry SET
+    content   = :content,
+    mood      = :mood,
+    tags      = :tags,
+    updatedAt = :updatedAt
+WHERE id = :id;
+
+deleteEntry:
+DELETE FROM JournalEntry WHERE id = :id;

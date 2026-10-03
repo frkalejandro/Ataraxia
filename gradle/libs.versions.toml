@@ -1,0 +1,57 @@
+[versions]
+kotlin                  = "2.1.20"
+agp                     = "8.7.3"
+compose-multiplatform   = "1.7.3"
+koin                    = "4.0.0"
+sqldelight              = "2.0.2"
+kotlinx-datetime        = "0.6.1"
+kotlinx-coroutines      = "1.10.1"
+kotlinx-serialization   = "1.8.0"
+datastore               = "1.1.2"
+voyager                 = "1.1.0-beta03"
+kotest                  = "5.9.1"
+turbine                 = "1.2.0"
+uuid                    = "0.8.4"
+activity-compose        = "1.9.3"
+
+[libraries]
+kotlin-test                         = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlinx-coroutines-core             = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing            = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-datetime                    = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+kotlinx-serialization-json          = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+
+sqldelight-runtime                  = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
+sqldelight-coroutines               = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
+sqldelight-android-driver           = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
+sqldelight-native-driver            = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
+sqldelight-sqlite-driver            = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+sqldelight-primitive-adapters       = { module = "app.cash.sqldelight:primitive-adapters", version.ref = "sqldelight" }
+
+koin-core                           = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+koin-android                        = { module = "io.insert-koin:koin-android", version.ref = "koin" }
+koin-compose                        = { module = "io.insert-koin:koin-compose", version.ref = "koin" }
+koin-compose-viewmodel              = { module = "io.insert-koin:koin-compose-viewmodel", version.ref = "koin" }
+
+datastore-preferences               = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastore" }
+
+voyager-navigator                   = { module = "cafe.adriel.voyager:voyager-navigator", version.ref = "voyager" }
+voyager-screenmodel                 = { module = "cafe.adriel.voyager:voyager-screenmodel", version.ref = "voyager" }
+voyager-koin                        = { module = "cafe.adriel.voyager:voyager-koin", version.ref = "voyager" }
+voyager-transitions                 = { module = "cafe.adriel.voyager:voyager-transitions", version.ref = "voyager" }
+voyager-tab-navigator               = { module = "cafe.adriel.voyager:voyager-tab-navigator", version.ref = "voyager" }
+
+uuid                                = { module = "com.benasher44:uuid", version.ref = "uuid" }
+activity-compose                    = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+
+kotest-assertions                   = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
+turbine                             = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+
+[plugins]
+kotlin-multiplatform                = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization                = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-multiplatform               = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+compose-compiler                    = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+android-application                 = { id = "com.android.application", version.ref = "agp" }
+android-library                     = { id = "com.android.library", version.ref = "agp" }
+sqldelight                          = { id = "app.cash.sqldelight", version.ref = "sqldelight" }

@@ -1,0 +1,54 @@
+CREATE TABLE DailyStateEntry (
+    id                   TEXT    NOT NULL PRIMARY KEY,
+    date                 TEXT    NOT NULL UNIQUE,
+    energy               INTEGER NOT NULL,
+    mood                 INTEGER NOT NULL,
+    stress               INTEGER NOT NULL,
+    trained              INTEGER NOT NULL DEFAULT 0,
+    breakfast            TEXT    NOT NULL DEFAULT '',
+    lunch                TEXT    NOT NULL DEFAULT '',
+    tea                  TEXT    NOT NULL DEFAULT '',
+    dinner               TEXT    NOT NULL DEFAULT '',
+    otherFood            TEXT    NOT NULL DEFAULT '',
+    waterGlasses         INTEGER NOT NULL DEFAULT 0,
+    musclePain           INTEGER NOT NULL,
+    fatigue              INTEGER NOT NULL,
+    libido               INTEGER,
+    morningErection      TEXT    NOT NULL DEFAULT 'NOT_ANSWERED',
+    deepStudyMinutes     INTEGER NOT NULL DEFAULT 0,
+    concentration        INTEGER NOT NULL,
+    createdAt            INTEGER NOT NULL,
+    updatedAt            INTEGER NOT NULL
+);
+
+CREATE INDEX idx_daily_state_date ON DailyStateEntry(date);
+
+selectStateForDate:
+SELECT * FROM DailyStateEntry WHERE date = :date LIMIT 1;
+
+selectAllStates:
+SELECT * FROM DailyStateEntry
+ORDER BY date DESC;
+
+selectStatesInRange:
+SELECT * FROM DailyStateEntry
+WHERE date BETWEEN :from AND :to
+ORDER BY date ASC;
+
+upsertDailyState:
+INSERT OR REPLACE INTO DailyStateEntry(
+    id, date, energy, mood, stress, trained,
+    breakfast, lunch, tea, dinner, otherFood,
+    waterGlasses, musclePain, fatigue, libido,
+    morningErection, deepStudyMinutes, concentration,
+    createdAt, updatedAt
+) VALUES (
+    :id, :date, :energy, :mood, :stress, :trained,
+    :breakfast, :lunch, :tea, :dinner, :otherFood,
+    :waterGlasses, :musclePain, :fatigue, :libido,
+    :morningErection, :deepStudyMinutes, :concentration,
+    :createdAt, :updatedAt
+);
+
+deleteDailyState:
+DELETE FROM DailyStateEntry WHERE id = :id;

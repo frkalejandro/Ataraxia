@@ -1,0 +1,143 @@
+CREATE TABLE Task (
+    id          TEXT    NOT NULL PRIMARY KEY,
+    title       TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    dueDate     TEXT,
+    dueTime     TEXT,
+    priority    TEXT    NOT NULL DEFAULT 'MEDIUM',
+    energyLevel TEXT    NOT NULL DEFAULT 'MEDIUM',
+    status      TEXT    NOT NULL DEFAULT 'TODO',
+    projectId   TEXT,
+    tags        TEXT    NOT NULL DEFAULT '[]',
+    order_index INTEGER NOT NULL DEFAULT 0,
+    completedAt INTEGER,
+    createdAt   INTEGER NOT NULL,
+    updatedAt   INTEGER NOT NULL
+);
+
+CREATE TABLE Project (
+    id         TEXT    NOT NULL PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    color      TEXT    NOT NULL DEFAULT '#6C63FF',
+    icon       TEXT    NOT NULL DEFAULT 'folder',
+    isArchived INTEGER NOT NULL DEFAULT 0,
+    createdAt  INTEGER NOT NULL
+);
+
+CREATE TABLE CalendarEvent (
+    id              TEXT    NOT NULL PRIMARY KEY,
+    title           TEXT    NOT NULL,
+    description     TEXT    NOT NULL DEFAULT '',
+    date            TEXT    NOT NULL,
+    startTime       TEXT,
+    endTime         TEXT,
+    isAllDay        INTEGER NOT NULL DEFAULT 0,
+    color           TEXT    NOT NULL DEFAULT '#6C63FF',
+    recurrence      TEXT    NOT NULL DEFAULT 'NONE',
+    recurrenceEnd   TEXT,
+    reminderMinutes INTEGER,
+    linkedTaskId    TEXT,
+    createdAt       INTEGER NOT NULL,
+    updatedAt       INTEGER NOT NULL
+);
+
+CREATE INDEX idx_task_due_date ON Task(dueDate);
+CREATE INDEX idx_task_status   ON Task(status);
+CREATE INDEX idx_task_project  ON Task(projectId);
+CREATE INDEX idx_event_date    ON CalendarEvent(date);
+
+selectAllActiveTasks:
+SELECT * FROM Task WHERE status NOT IN ('DONE','CANCELLED')
+ORDER BY
+    CASE priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
+    CASE WHEN dueDate IS NULL THEN 1 ELSE 0 END,
+    dueDate ASC,
+    order_index ASC;
+
+selectTasksByDate:
+SELECT * FROM Task WHERE dueDate = :date ORDER BY order_index ASC;
+
+selectTasksByDateRange:
+SELECT * FROM Task WHERE dueDate BETWEEN :from AND :to ORDER BY dueDate ASC, order_index ASC;
+
+selectTaskById:
+SELECT * FROM Task WHERE id = :id;
+
+selectTasksByProject:
+SELECT * FROM Task WHERE projectId = :projectId AND status NOT IN ('DONE','CANCELLED')
+ORDER BY order_index ASC;
+
+insertTask:
+INSERT OR REPLACE INTO Task VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+
+updateTaskStatus:
+UPDATE Task SET status = :status, completedAt = :completedAt, updatedAt = :updatedAt WHERE id = :id;
+
+updateTask:
+UPDATE Task SET
+    title       = :title,
+    description = :description,
+    dueDate     = :dueDate,
+    dueTime     = :dueTime,
+    priority    = :priority,
+    energyLevel = :energyLevel,
+    projectId   = :projectId,
+    tags        = :tags,
+    order_index = :order_index,
+    updatedAt   = :updatedAt
+WHERE id = :id;
+
+deleteTask:
+DELETE FROM Task WHERE id = :id;
+
+countCompletedTasksInRange:
+SELECT COUNT(*) FROM Task WHERE status = 'DONE' AND dueDate BETWEEN :from AND :to;
+
+countDueTasksInRange:
+SELECT COUNT(*) FROM Task WHERE dueDate BETWEEN :from AND :to;
+
+selectAllProjects:
+SELECT * FROM Project WHERE isArchived = 0 ORDER BY name ASC;
+
+insertProject:
+INSERT OR REPLACE INTO Project VALUES (?,?,?,?,?,?);
+
+deleteProject:
+DELETE FROM Project WHERE id = :id;
+
+selectEventsForDate:
+SELECT * FROM CalendarEvent WHERE date = :date ORDER BY
+    CASE WHEN startTime IS NULL THEN 1 ELSE 0 END,
+    startTime ASC;
+
+selectEventsForDateRange:
+SELECT * FROM CalendarEvent WHERE date BETWEEN :from AND :to ORDER BY date ASC,
+    CASE WHEN startTime IS NULL THEN 1 ELSE 0 END,
+    startTime ASC;
+
+selectEventById:
+SELECT * FROM CalendarEvent WHERE id = :id;
+
+insertEvent:
+INSERT OR REPLACE INTO CalendarEvent VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+
+updateEvent:
+UPDATE CalendarEvent SET
+    title           = :title,
+    description     = :description,
+    date            = :date,
+    startTime       = :startTime,
+    endTime         = :endTime,
+    isAllDay        = :isAllDay,
+    color           = :color,
+    recurrence      = :recurrence,
+    recurrenceEnd   = :recurrenceEnd,
+    reminderMinutes = :reminderMinutes,
+    updatedAt       = :updatedAt
+WHERE id = :id;
+
+deleteEvent:
+DELETE FROM CalendarEvent WHERE id = :id;
+
+countEventsInRange:
+SELECT COUNT(*) FROM CalendarEvent WHERE date BETWEEN :from AND :to;

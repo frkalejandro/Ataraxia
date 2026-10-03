@@ -1,0 +1,84 @@
+CREATE TABLE Habit (
+    id          TEXT    NOT NULL PRIMARY KEY,
+    title       TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    icon        TEXT    NOT NULL DEFAULT 'star',
+    color       TEXT    NOT NULL DEFAULT '#6C63FF',
+    frequency   TEXT    NOT NULL,
+    targetDays  TEXT    NOT NULL DEFAULT '[]',
+    targetCount INTEGER NOT NULL DEFAULT 1,
+    isArchived  INTEGER NOT NULL DEFAULT 0,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    category    TEXT    NOT NULL DEFAULT 'GENERAL',
+    createdAt   INTEGER NOT NULL,
+    updatedAt   INTEGER NOT NULL
+);
+
+CREATE TABLE HabitEntry (
+    id        TEXT    NOT NULL PRIMARY KEY,
+    habitId   TEXT    NOT NULL REFERENCES Habit(id) ON DELETE CASCADE,
+    date      TEXT    NOT NULL,
+    count     INTEGER NOT NULL DEFAULT 1,
+    note      TEXT    NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    UNIQUE(habitId, date)
+);
+
+CREATE INDEX idx_habit_entry_date  ON HabitEntry(date);
+CREATE INDEX idx_habit_entry_habit ON HabitEntry(habitId);
+
+selectAllHabits:
+SELECT * FROM Habit WHERE isArchived = 0 ORDER BY category ASC, order_index ASC;
+
+selectHabitById:
+SELECT * FROM Habit WHERE id = ?;
+
+insertHabit:
+INSERT OR REPLACE INTO Habit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);
+
+updateHabit:
+UPDATE Habit SET
+    title       = :title,
+    description = :description,
+    icon        = :icon,
+    color       = :color,
+    frequency   = :frequency,
+    targetDays  = :targetDays,
+    targetCount = :targetCount,
+    order_index = :order_index,
+    category    = :category,
+    updatedAt   = :updatedAt
+WHERE id = :id;
+
+archiveHabit:
+UPDATE Habit SET isArchived = 1, updatedAt = :updatedAt WHERE id = :id;
+
+deleteHabit:
+DELETE FROM Habit WHERE id = :id;
+
+selectEntriesForHabit:
+SELECT * FROM HabitEntry WHERE habitId = :habitId ORDER BY date DESC;
+
+selectEntriesForDateRange:
+SELECT he.id, he.habitId, he.date, he.count, he.note, he.createdAt
+FROM HabitEntry he
+JOIN Habit h ON he.habitId = h.id
+WHERE he.date BETWEEN :from AND :to
+ORDER BY he.date DESC;
+
+selectEntryForHabitAndDate:
+SELECT * FROM HabitEntry WHERE habitId = :habitId AND date = :date;
+
+upsertHabitEntry:
+INSERT OR REPLACE INTO HabitEntry(id, habitId, date, count, note, createdAt)
+VALUES (:id, :habitId, :date, :count, :note, :createdAt);
+
+deleteHabitEntry:
+DELETE FROM HabitEntry WHERE habitId = :habitId AND date = :date;
+
+selectDatesWithEntry:
+SELECT DISTINCT date FROM HabitEntry WHERE habitId = :habitId ORDER BY date DESC;
+
+countCompletedDaysInRange:
+SELECT COUNT(DISTINCT date) FROM HabitEntry
+WHERE habitId = :habitId AND date BETWEEN :from AND :to;
