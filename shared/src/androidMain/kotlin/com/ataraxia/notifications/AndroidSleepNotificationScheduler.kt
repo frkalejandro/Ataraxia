@@ -15,7 +15,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import kotlinx.datetime.LocalTime
-import java.util.Calendar
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
 
 private const val PREFS_NAME = "ataraxia_sleep_reminders"
 private const val KEY_ENABLED = "enabled"
@@ -30,7 +31,7 @@ private const val EXTRA_OFFSET_MINUTES = "offset_minutes"
 private const val EXTRA_BEDTIME_HOUR = "bedtime_hour"
 private const val EXTRA_BEDTIME_MINUTE = "bedtime_minute"
 
-private val REMINDER_OFFSETS = intArrayOf(60, 30, 10)
+private val REMINDER_OFFSETS = SleepReminder.entries.map { it.offsetMinutes }
 
 class AndroidSleepNotificationScheduler(
     context: Context,
@@ -239,34 +240,12 @@ private fun nextTriggerMillis(
     bedtimeMinute: Int,
     offsetMinutes: Int,
 ): Long {
-    val now = Calendar.getInstance()
-
-    val bedtime = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, bedtimeHour)
-        set(Calendar.MINUTE, bedtimeMinute)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }
-
-    if (bedtime.timeInMillis <= now.timeInMillis) {
-        bedtime.add(Calendar.DAY_OF_YEAR, 1)
-    }
-
-    var trigger = (bedtime.clone() as Calendar).apply {
-        add(Calendar.MINUTE, -offsetMinutes)
-    }
-
-    // Por ejemplo: si se configura a las 01:41 una hora de acostarse 01:52,
-    // el aviso de 10 min queda hoy a las 01:42, pero los de 30 y 60 min
-    // ya pasaron y se programan para el día siguiente.
-    if (trigger.timeInMillis <= now.timeInMillis) {
-        bedtime.add(Calendar.DAY_OF_YEAR, 1)
-        trigger = (bedtime.clone() as Calendar).apply {
-            add(Calendar.MINUTE, -offsetMinutes)
-        }
-    }
-
-    return trigger.timeInMillis
+    return nextSleepReminder(
+        reminder = SleepReminder.entries.first { it.offsetMinutes == offsetMinutes },
+        bedtime = LocalTime(bedtimeHour, bedtimeMinute),
+        now = Clock.System.now(),
+        zone = TimeZone.currentSystemDefault(),
+    ).toEpochMilliseconds()
 }
 
 private fun showSleepNotification(
@@ -286,15 +265,8 @@ private fun showSleepNotification(
     createNotificationChannel(context)
 
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val bedtimeText = bedtimeHour.toString().padStart(2, '0') + ":" +
-        bedtimeMinute.toString().padStart(2, '0')
-
-    val remainingText = when (offsetMinutes) {
-        60 -> "1 hora"
-        30 -> "30 minutos"
-        10 -> "10 minutos"
-        else -> "$offsetMinutes minutos"
-    }
+    val reminder = SleepReminder.entries.first { it.offsetMinutes == offsetMinutes }
+    val message = reminder.message(LocalTime(bedtimeHour, bedtimeMinute))
 
     val launchIntent = context.packageManager
         .getLaunchIntentForPackage(context.packageName)
@@ -313,11 +285,11 @@ private fun showSleepNotification(
 
     val notification = Notification.Builder(context, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-        .setContentTitle("Prepárate para dormir")
-        .setContentText("Faltan $remainingText para acostarte a las $bedtimeText.")
+        .setContentTitle(reminder.title)
+        .setContentText(message)
         .setStyle(
             Notification.BigTextStyle().bigText(
-                "Faltan $remainingText para tu hora recomendada de acostarte: $bedtimeText."
+                message
             )
         )
         .setCategory(Notification.CATEGORY_REMINDER)
@@ -337,7 +309,7 @@ private fun createNotificationChannel(context: Context) {
         CHANNEL_NAME,
         NotificationManager.IMPORTANCE_HIGH,
     ).apply {
-        description = "Avisos de 1 hora, 30 minutos y 10 minutos antes de dormir"
+        description = "Avisos de última comida, último buen vaso de agua y preparación para dormir"
         enableVibration(true)
     }
 

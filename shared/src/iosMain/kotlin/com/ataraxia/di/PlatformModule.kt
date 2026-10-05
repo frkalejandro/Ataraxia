@@ -10,5 +10,6 @@ actual val platformModule = module {
     single { DatabaseDriverFactory() }
     single<TimerNotificationScheduler> { NoOpTimerNotificationScheduler() }
     single<HabitNotificationSettings> { NoOpHabitNotificationSettings() }
+    single<ExerciseReminderSettings> { NoOpExerciseReminderSettings() }
     single<SleepNotificationScheduler> { NoOpSleepNotificationScheduler() }
 }

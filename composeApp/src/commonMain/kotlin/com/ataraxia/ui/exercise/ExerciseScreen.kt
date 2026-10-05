@@ -1,6 +1,10 @@
 package com.ataraxia.ui.exercise
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -11,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -18,9 +23,21 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.koin.koinScreenModel
 import com.ataraxia.domain.model.*
 import com.ataraxia.ui.TimerNotificationHint
+import com.ataraxia.ui.WellnessSection
 import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
+
+private val ExerciseOrange = Color(0xFFF08A5D)
+private val ExercisePurple = Color(0xFF6C63FF)
+private val ExerciseGreen = Color(0xFF40B88E)
+private fun BodyArea.accent(): Color = when (this) {
+    BodyArea.NECK, BodyArea.BACK -> Color(0xFF4D8EDB)
+    BodyArea.SHOULDERS, BodyArea.BICEPS -> Color(0xFF9C6ADE)
+    BodyArea.CHEST, BodyArea.TRICEPS -> Color(0xFFE66D8A)
+    BodyArea.FOREARMS, BodyArea.LEGS -> ExerciseGreen
+    BodyArea.ABS -> ExerciseOrange
+}
 
 class ExerciseScreen : Screen {
     @Composable
@@ -81,6 +98,22 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
                 item(key = "active") { ActiveWorkoutCard(active, state.busy, vm) }
             }
             if (state.area == null) {
+                item {
+                    WellnessSection("Muévete a tu ritmo", "Un espacio para fortalecer cuerpo y constancia",
+                        Icons.Default.FitnessCenter, ExerciseOrange) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(shape = RoundedCornerShape(10.dp), color = ExerciseOrange.copy(alpha = 0.12f)) {
+                                Text("${state.exercises.size} ejercicios", Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelLarge)
+                            }
+                            Surface(shape = RoundedCornerShape(10.dp), color = ExercisePurple.copy(alpha = 0.12f)) {
+                                Text("${state.routines.size} rutinas", Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
+                }
+                item { ExerciseReminderCard() }
                 item { LastWorkoutCard(lastWorkoutDay(state.sessions)) }
                 item {
                     Text("Explora por zona", style = MaterialTheme.typography.titleLarge)
@@ -90,8 +123,17 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
                 items(BodyArea.entries.chunked(2)) { areas ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         areas.forEach { area ->
-                            OutlinedCard(onClick = { vm.selectArea(area) }, modifier = Modifier.weight(1f)) {
-                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val accent = area.accent()
+                            Card(onClick = { vm.selectArea(area) }, modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
+                                colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.08f))) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Box(Modifier.size(38.dp).background(accent.copy(alpha = 0.14f), CircleShape),
+                                        contentAlignment = Alignment.Center) {
+                                        Icon(if (area == BodyArea.LEGS) Icons.Default.DirectionsRun else Icons.Default.FitnessCenter,
+                                            null, tint = accent, modifier = Modifier.size(22.dp))
+                                    }
                                     Text(area.label, fontWeight = FontWeight.SemiBold)
                                     val count = state.exercises.count { it.area == area }
                                     Text("$count ${if (count == 1) "ejercicio" else "ejercicios"}",
@@ -103,30 +145,33 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
                     }
                 }
                 item {
-                    Text("Mis rutinas", style = MaterialTheme.typography.titleLarge)
-                    Text("Combina zonas y elige series o un tiempo total compartido.")
-                    FilledTonalButton(onClick = { vm.editRoutine(RoutineDraft()) },
-                        enabled = state.exercises.isNotEmpty() && !state.loading && !state.loadFailed && !state.busy) {
-                        Icon(Icons.Default.Add, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Crear rutina")
+                    WellnessSection("Mis rutinas", "Tu entrenamiento, a tu manera",
+                        Icons.Default.ViewList, ExercisePurple) {
+                        Text("Combina zonas y elige series o un tiempo total compartido.", style = MaterialTheme.typography.bodyMedium)
+                        Button(onClick = { vm.editRoutine(RoutineDraft()) },
+                            colors = ButtonDefaults.buttonColors(containerColor = ExercisePurple, contentColor = Color.White),
+                            shape = RoundedCornerShape(14.dp),
+                            enabled = state.exercises.isNotEmpty() && !state.loading && !state.loadFailed && !state.busy) {
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Crear rutina")
+                        }
+                        if (state.exercises.isEmpty()) Text("Agrega un ejercicio en una zona para comenzar.",
+                            style = MaterialTheme.typography.bodySmall)
                     }
-                    if (state.exercises.isEmpty()) Text("Agrega un ejercicio en una zona para comenzar.",
-                        style = MaterialTheme.typography.bodySmall)
                 }
                 items(state.routines, key = { "routine_${it.id}" }) { routine ->
-                    OutlinedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(routine.name, style = MaterialTheme.typography.titleMedium)
+                    WellnessSection(routine.name, if (routine.mode == WorkoutMode.TIMED) "Por tiempo" else "Series y repeticiones",
+                        if (routine.mode == WorkoutMode.TIMED) Icons.Default.Timer else Icons.Default.FitnessCenter, ExercisePurple) {
                             RoutineDetails(routine)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { vm.start(routine) }, enabled = state.active == null && !state.busy) { Text("Comenzar") }
+                                Button(onClick = { vm.start(routine) }, enabled = state.active == null && !state.busy,
+                                    colors = ButtonDefaults.buttonColors(containerColor = ExercisePurple, contentColor = Color.White)) { Text("Comenzar") }
                                 TextButton(onClick = { vm.editRoutine(routine.toDraft()) }, enabled = !state.busy) { Text("Configurar") }
                                 IconButton(onClick = { deleteRoutine = routine }, enabled = !state.busy) {
                                     Icon(Icons.Default.DeleteOutline, "Eliminar rutina ${routine.name}")
                                 }
                             }
-                        }
                     }
                 }
             } else {
@@ -142,9 +187,7 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
                 val exercises = state.exercises.filter { it.area == area }
                 if (exercises.isEmpty()) item { Text("Aún no tienes ejercicios en esta zona. Escribe el nombre del primero.") }
                 items(exercises, key = { it.id }) { exercise ->
-                    OutlinedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(exercise.name, style = MaterialTheme.typography.titleMedium)
+                    WellnessSection(exercise.name, area.label, Icons.Default.FitnessCenter, area.accent()) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(onClick = {
                                     vm.editRoutine(RoutineDraft(name = exercise.name, targets = listOf(ExerciseTarget(exercise))))
@@ -156,7 +199,6 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
                                     Icon(Icons.Default.DeleteOutline, "Eliminar ${exercise.name}")
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -188,9 +230,8 @@ private fun RoutineDetails(routine: WorkoutRoutine) {
 
 @Composable
 private fun LastWorkoutCard(sessions: List<WorkoutSession>) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Tu último día de ejercicio", style = MaterialTheme.typography.titleMedium)
+    WellnessSection("Tu último día de ejercicio", "Cada sesión es un paso más",
+        Icons.Default.CheckCircle, ExerciseGreen) {
             if (sessions.isEmpty()) {
                 Text("Aún no hay sesiones realizadas. Aquí verás los ejercicios del último día que entrenaste.")
             } else {
@@ -202,7 +243,6 @@ private fun LastWorkoutCard(sessions: List<WorkoutSession>) {
                     RoutineDetails(session.routine)
                 }
             }
-        }
     }
 }
 
@@ -220,14 +260,15 @@ private fun ActiveWorkoutCard(active: ActiveWorkout, busy: Boolean, vm: Exercise
     }
     val remaining = ((active.remainingAt(now) + 999) / 1000).toInt()
     val timed = active.routine.mode == WorkoutMode.TIMED
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Sesión en curso", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-            Text(active.routine.name, style = MaterialTheme.typography.titleLarge)
+    WellnessSection(active.routine.name, "Sesión en curso", Icons.Default.LocalFireDepartment, ExerciseOrange) {
             RoutineDetails(active.routine)
             if (timed) {
-                Text(formatDuration(remaining), style = MaterialTheme.typography.displayMedium)
-                LinearProgressIndicator(progress = { 1f - remaining.toFloat() / active.routine.durationSeconds }, modifier = Modifier.fillMaxWidth())
+                Surface(shape = RoundedCornerShape(16.dp), color = ExerciseOrange.copy(alpha = 0.1f), modifier = Modifier.fillMaxWidth()) {
+                    Text(formatDuration(remaining), modifier = Modifier.padding(20.dp),
+                        style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.SemiBold)
+                }
+                LinearProgressIndicator(progress = { (1f - remaining.toFloat() / active.routine.durationSeconds).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(), color = ExerciseOrange, trackColor = ExerciseOrange.copy(alpha = 0.14f))
                 Text(if (remaining == 0) "Tiempo terminado. Confirma si realizaste la sesión."
                     else "Alterna estos ejercicios durante el tiempo total. Haz las repeticiones que puedas.")
                 if (remaining > 0) OutlinedButton(onClick = vm::pauseOrResume, enabled = !busy) {
@@ -235,13 +276,13 @@ private fun ActiveWorkoutCard(active: ActiveWorkout, busy: Boolean, vm: Exercise
                 }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { confirmComplete = true }, enabled = !busy && (!timed || remaining == 0)) { Text("Marcar como realizada") }
+                Button(onClick = { confirmComplete = true }, enabled = !busy && (!timed || remaining == 0),
+                    colors = ButtonDefaults.buttonColors(containerColor = ExerciseGreen, contentColor = Color.White)) { Text("Marcar como realizada") }
                 TextButton(onClick = { confirmDiscard = true }, enabled = !busy) { Text("Descartar sesión") }
             }
             Text("La sesión se conserva al salir de la app. El contador se actualiza al volver.",
                 style = MaterialTheme.typography.bodySmall)
             if (timed) TimerNotificationHint()
-        }
     }
     if (confirmComplete) ConfirmDialog("Guardar sesión realizada", "Confirma que realizaste los ejercicios indicados. Se agregarán a tu último día de ejercicio.",
         "Guardar sesión", { confirmComplete = false }, { vm.complete(); confirmComplete = false })
@@ -263,8 +304,10 @@ private fun RoutineEditor(state: ExerciseUiState, draft: RoutineDraft, vm: Exerc
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
+                WellnessSection("Prepara tu sesión", "Elige cómo quieres moverte hoy", Icons.Default.Tune, ExercisePurple) {
                 OutlinedTextField(draft.name, { vm.editRoutine(draft.copy(name = it)) }, label = { Text("Nombre de la rutina") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !state.busy)
+                    singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !state.busy, shape = RoundedCornerShape(14.dp))
+                }
             }
             item {
                 Text("¿Cómo quieres entrenar?", style = MaterialTheme.typography.titleMedium)
@@ -333,7 +376,9 @@ private fun RoutineEditor(state: ExerciseUiState, draft: RoutineDraft, vm: Exerc
                 }
             }
             item {
-                Button(onClick = vm::saveRoutine, enabled = valid && !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Guardar rutina") }
+                Button(onClick = vm::saveRoutine, enabled = valid && !state.busy, modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = ExercisePurple, contentColor = Color.White),
+                    shape = RoundedCornerShape(14.dp)) { Text("Guardar rutina") }
                 if (!valid) Text("Agrega un nombre, al menos un ejercicio y valores válidos. Las series y repeticiones deben ser enteros mayores que cero.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

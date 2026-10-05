@@ -31,6 +31,7 @@ import cafe.adriel.voyager.koin.koinScreenModel
 import com.ataraxia.domain.model.*
 import com.ataraxia.domain.usecase.*
 import com.ataraxia.notifications.SleepNotificationScheduler
+import com.ataraxia.notifications.SleepReminder
 import com.ataraxia.ui.dashboard.formatTime
 import com.benasher44.uuid.uuid4
 import kotlinx.coroutines.flow.*
@@ -261,6 +262,7 @@ class SleepScreen : Screen {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item { SleepGoalCard(state.goal, onConfigure = vm::showCycleSheet) }
+                item { LastMealCard(state.goal) }
                 item { SleepStatsCard(state.stats) }
                 item {
                     Text(
@@ -436,6 +438,59 @@ private fun SleepGoalCard(goal: SleepGoal?, onConfigure: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LastMealCard(goal: SleepGoal?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Hora de última comida",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (goal == null || !goal.isActive) {
+                Text(
+                    "Configura una meta de sueño activa para calcular la hora límite de tu última comida y tu último buen vaso de agua.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                Text(
+                    "Según tu meta de acostarte a las ${formatTime(goal.bedtime.hour, goal.bedtime.minute)}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                listOf(SleepReminder.LAST_MEAL, SleepReminder.LAST_WATER).forEach { reminder ->
+                    val time = reminder.timeBefore(goal.bedtime)
+                    val previousDay = time > goal.bedtime
+                    val label = if (reminder == SleepReminder.LAST_MEAL) "Última comida" else reminder.title
+                    val lead = if (reminder == SleepReminder.LAST_MEAL) "2 h 30 min" else "2 h"
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(label, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "A más tardar a las ${formatTime(time.hour, time.minute)}${if (previousDay) " (día anterior)" else ""}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2196F3),
+                        )
+                        Text(
+                            "$lead antes de acostarte",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }

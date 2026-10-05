@@ -18,6 +18,8 @@ import com.ataraxia.notifications.AndroidHabitNotificationScheduler
 import com.ataraxia.notifications.AndroidAgendaNotificationScheduler
 import com.ataraxia.notifications.AndroidTimerNotificationScheduler
 import com.ataraxia.notifications.AndroidStateNotificationScheduler
+import com.ataraxia.notifications.AndroidSleepNotificationScheduler
+import com.ataraxia.notifications.AndroidExerciseReminderScheduler
 import com.ataraxia.ui.AtaraxiaApp
 import com.ataraxia.ui.viewModelModule
 import org.koin.android.ext.koin.androidContext
@@ -41,6 +43,8 @@ class AtaraxiaApplication : Application() {
 
         // Respeta los horarios que el usuario dejó habilitados.
         AndroidHabitNotificationScheduler(this).rescheduleSavedReminders()
+        AndroidSleepNotificationScheduler(this).rescheduleSavedReminders()
+        AndroidExerciseReminderScheduler(this).reschedule()
         AndroidAgendaNotificationScheduler(this).scheduleDailyReminders()
         AndroidStateNotificationScheduler(this).scheduleDailyReminder()
     }

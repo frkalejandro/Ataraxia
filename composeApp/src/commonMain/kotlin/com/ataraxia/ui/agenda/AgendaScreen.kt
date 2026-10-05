@@ -129,8 +129,8 @@ class AgendaViewModel(
         }
     }
 
-    fun onCompleteTask(id: String) {
-        screenModelScope.launch { completeTask(id) }
+    fun onCompleteTask(id: String, completed: Boolean) {
+        screenModelScope.launch { completeTask(id, completed) }
     }
 
     fun onSaveTask(
@@ -500,7 +500,7 @@ private fun MonthCalendar(
 @Composable
 private fun DayContent(
     state: AgendaUiState,
-    onComplete: (String) -> Unit,
+    onComplete: (String, Boolean) -> Unit,
 ) {
     LazyColumn(
         contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -573,7 +573,7 @@ private fun DayContent(
         val completed = state.tasks.filter { it.isCompleted }
 
         items(pending,   key = { "task_${it.id}" })  { task ->
-            AgendaTaskRow(task, onComplete = { onComplete(task.id) })
+            AgendaTaskRow(task, onComplete = { onComplete(task.id, it) })
         }
         if (completed.isNotEmpty()) {
             item {
@@ -585,7 +585,7 @@ private fun DayContent(
                 )
             }
             items(completed, key = { "done_${it.id}" }) { task ->
-                AgendaTaskRow(task, onComplete = {})
+                AgendaTaskRow(task, onComplete = { onComplete(task.id, it) })
             }
         }
 
@@ -648,7 +648,7 @@ private fun EventChip(event: CalendarEvent) {
 // ─────────────────────────────────────────────
 
 @Composable
-private fun AgendaTaskRow(task: Task, onComplete: () -> Unit) {
+private fun AgendaTaskRow(task: Task, onComplete: (Boolean) -> Unit) {
     val priorityColor = when (task.priority) {
         TaskPriority.CRITICAL -> Color(0xFFE05252)
         TaskPriority.HIGH     -> Color(0xFFF5A623)
@@ -721,7 +721,7 @@ private fun AgendaTaskRow(task: Task, onComplete: () -> Unit) {
             }
             Checkbox(
                 checked         = task.isCompleted,
-                onCheckedChange = { if (!task.isCompleted) onComplete() },
+                onCheckedChange = onComplete,
                 colors          = CheckboxDefaults.colors(checkedColor = Color(0xFF4CAF82)),
             )
         }

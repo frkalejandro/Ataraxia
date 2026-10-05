@@ -11,6 +11,7 @@ actual val platformModule = module {
     single { DatabaseDriverFactory() }
     single<TimerNotificationScheduler> { AndroidTimerNotificationScheduler(get<Application>()) }
     single<HabitNotificationSettings> { AndroidHabitNotificationScheduler(get<Application>()) }
+    single<ExerciseReminderSettings> { AndroidExerciseReminderScheduler(get<Application>()) }
     single<SleepNotificationScheduler> {
         AndroidSleepNotificationScheduler(get<Application>())
     }

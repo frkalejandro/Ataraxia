@@ -5,7 +5,8 @@ import kotlinx.datetime.LocalTime
 /**
  * Programa los avisos asociados a la hora recomendada para acostarse.
  *
- * En Android se crean alarmas para 60, 30 y 10 minutos antes.
+ * En Android se crean alarmas para la última comida (150 minutos antes),
+ * el último buen vaso de agua (120) y la preparación para dormir (60, 30 y 10).
  * En escritorio e iOS esta implementación se deja como no-op por ahora.
  */
 interface SleepNotificationScheduler {

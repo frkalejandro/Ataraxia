@@ -98,8 +98,8 @@ class SaveTaskUseCase(
 class CompleteTaskUseCase(
     private val repo: TaskRepository,
 ) {
-    suspend operator fun invoke(id: String) =
-        repo.updateTaskStatus(id, TaskStatus.DONE)
+    suspend operator fun invoke(id: String, completed: Boolean = true) =
+        repo.updateTaskStatus(id, if (completed) TaskStatus.DONE else TaskStatus.TODO)
 }
 
 class ObserveCalendarEventsUseCase(
