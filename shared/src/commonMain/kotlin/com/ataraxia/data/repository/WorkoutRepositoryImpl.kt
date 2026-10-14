@@ -34,6 +34,11 @@ class WorkoutRepositoryImpl(private val db: AtaraxiaDatabase) : WorkoutRepositor
         q.saveRoutine(routine.id, json.encodeToString(routine))
     }
     override suspend fun deleteRoutine(id: String) = withContext(Dispatchers.Default) { q.deleteRoutine(id) }
+    override suspend fun updateSession(session: WorkoutSession) = withContext(Dispatchers.Default) {
+        kotlinx.datetime.LocalDate.parse(session.date)
+        q.updateSession(session.completedAt, json.encodeToString(session), session.id)
+    }
+    override suspend fun deleteSession(id: String) = withContext(Dispatchers.Default) { q.deleteSession(id) }
     override suspend fun saveActive(workout: ActiveWorkout) = withContext(Dispatchers.Default) {
         q.saveActive(json.encodeToString(workout))
     }

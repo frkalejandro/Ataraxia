@@ -44,6 +44,12 @@ SELECT * FROM CompletedWorkout ORDER BY completedAt DESC;
 saveSession:
 INSERT OR IGNORE INTO CompletedWorkout(id, completedAt, payload) VALUES (?, ?, ?);
 
+updateSession:
+UPDATE CompletedWorkout SET completedAt = :completedAt, payload = :payload WHERE id = :id;
+
+deleteSession:
+DELETE FROM CompletedWorkout WHERE id = :id;
+
 selectActive:
 SELECT * FROM CurrentWorkout WHERE id = 1;
 

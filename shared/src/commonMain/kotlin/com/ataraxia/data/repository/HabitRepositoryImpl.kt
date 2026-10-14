@@ -18,6 +18,9 @@ class HabitRepositoryImpl(
 
     private val queries get() = db.habitQueries
 
+    override fun observeArchivedHabits(): Flow<List<Habit>> = queries.selectArchivedHabits().asFlow()
+        .mapToList(Dispatchers.Default).map { rows -> rows.map { it.toDomain() } }
+
     override fun observeHabits(): Flow<List<Habit>> =
         queries.selectAllHabits()
             .asFlow()
@@ -34,7 +37,7 @@ class HabitRepositoryImpl(
 
     override fun observeHabitWithStatus(habitId: String, today: LocalDate): Flow<HabitWithStatus> =
         observeHabits()
-            .map { habits -> habits.first { it.id == habitId } }
+            .mapNotNull { habits -> habits.firstOrNull { it.id == habitId } }
             .combine(
                 queries.selectEntryForHabitAndDate(habitId, today.toString())
                     .asFlow()
@@ -56,6 +59,18 @@ class HabitRepositoryImpl(
         }
 
     override suspend fun saveHabit(habit: Habit) = withContext(Dispatchers.Default) {
+        require(habit.title.isNotBlank())
+        db.transaction {
+        if (queries.selectHabitById(habit.id).executeAsOneOrNull() != null) {
+            // REPLACE deletes the old parent row and can cascade-delete its tracking history.
+            queries.updateHabit(
+                isArchived = if (habit.isArchived) 1L else 0L,
+                title = habit.title.trim(), description = habit.description, icon = habit.icon, color = habit.color,
+                frequency = habit.frequency.name, targetDays = habit.targetDays.map { it.isoDayNumber }.toString(),
+                targetCount = habit.targetCount.toLong(), order_index = habit.orderIndex.toLong(),
+                category = habit.category.name, updatedAt = habit.updatedAt.toEpochMilliseconds(), id = habit.id,
+            )
+        } else {
         queries.insertHabit(
             id          = habit.id,
             title       = habit.title,
@@ -71,6 +86,8 @@ class HabitRepositoryImpl(
             createdAt   = habit.createdAt.toEpochMilliseconds(),
             updatedAt   = habit.updatedAt.toEpochMilliseconds(),
         )
+        }
+        }
     }
 
     override suspend fun archiveHabit(id: String) = withContext(Dispatchers.Default) {
@@ -78,7 +95,10 @@ class HabitRepositoryImpl(
     }
 
     override suspend fun deleteHabit(id: String) = withContext(Dispatchers.Default) {
-        queries.deleteHabit(id)
+        db.transaction {
+            queries.deleteEntriesForHabit(id)
+            queries.deleteHabit(id)
+        }
     }
 
     override fun observeEntriesForDate(date: LocalDate): Flow<List<HabitEntry>> =

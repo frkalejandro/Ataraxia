@@ -97,6 +97,7 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name="com.ataraxia.notifications.EventReminderReceiver" android:exported="false" />
         <receiver android:name="com.ataraxia.notifications.AgendaReminderReceiver"
             android:exported="false" />
         <receiver android:name="com.ataraxia.notifications.AgendaReminderRescheduleReceiver"

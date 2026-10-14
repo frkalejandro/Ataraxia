@@ -45,6 +45,7 @@ kotlin {
             implementation(libs.voyager.transitions)
             implementation(libs.voyager.tab.navigator)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.serialization.json)
             implementation(libs.uuid)
         }
         androidMain.dependencies {
@@ -55,10 +56,14 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        val desktopTest by getting {
+            dependencies { implementation("org.jetbrains.compose.ui:ui-test:1.7.3") }
+        }
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
+                implementation("org.apache.pdfbox:pdfbox:3.0.6")
             }
         }
     }

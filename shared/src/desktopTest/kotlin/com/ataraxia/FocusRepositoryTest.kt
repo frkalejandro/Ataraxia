@@ -78,7 +78,7 @@ class FocusRepositoryTest {
             File("src/commonMain/sqldelight/migrations/3.db").copyTo(migrated, overwrite = true)
             JdbcSqliteDriver("jdbc:sqlite:${migrated.absolutePath}").use { driver ->
                 AtaraxiaDatabase(driver).journalQueries.insertEntry("entry", "Conservar", null, "", 1, 1)
-                AtaraxiaDatabase.Schema.migrate(driver, 3, 5)
+                AtaraxiaDatabase.Schema.migrate(driver, 3, AtaraxiaDatabase.Schema.version)
                 assertEquals("Conservar", AtaraxiaDatabase(driver).journalQueries
                     .selectEntryById("entry").executeAsOne().content)
             }

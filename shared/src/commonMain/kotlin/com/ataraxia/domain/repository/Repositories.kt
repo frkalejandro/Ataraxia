@@ -9,6 +9,7 @@ import kotlinx.datetime.LocalDate
 // ─────────────────────────────────────────────
 
 interface HabitRepository {
+    fun observeArchivedHabits(): Flow<List<Habit>>
     fun observeHabits(): Flow<List<Habit>>
     fun observeHabitWithStatus(habitId: String, today: LocalDate): Flow<HabitWithStatus>
     fun observeAllHabitsWithStatus(today: LocalDate): Flow<List<HabitWithStatus>>
@@ -32,6 +33,7 @@ interface HabitRepository {
 interface SleepRepository {
     fun observeSleepGoal(): Flow<SleepGoal?>
     suspend fun saveSleepGoal(goal: SleepGoal)
+    suspend fun deleteSleepGoal()
 
     fun observeSleepEntries(limit: Int = 30): Flow<List<SleepEntry>>
     fun observeSleepEntriesInRange(from: LocalDate, to: LocalDate): Flow<List<SleepEntry>>

@@ -111,7 +111,9 @@ SELECT * FROM CalendarEvent WHERE date = :date ORDER BY
     startTime ASC;
 
 selectEventsForDateRange:
-SELECT * FROM CalendarEvent WHERE date BETWEEN :from AND :to ORDER BY date ASC,
+SELECT * FROM CalendarEvent WHERE (date BETWEEN :from AND :to)
+    OR (recurrence = 'WEEKLY' AND date <= :to AND (recurrenceEnd IS NULL OR recurrenceEnd >= :from))
+ORDER BY date ASC,
     CASE WHEN startTime IS NULL THEN 1 ELSE 0 END,
     startTime ASC;
 

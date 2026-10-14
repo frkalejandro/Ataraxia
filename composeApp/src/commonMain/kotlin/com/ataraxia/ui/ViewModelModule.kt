@@ -10,15 +10,16 @@ import com.ataraxia.ui.exercise.ExerciseViewModel
 import org.koin.dsl.module
 
 val viewModelModule = module {
+    factory { com.ataraxia.ui.finance.FinanceViewModel(get()) }
     factory { ExerciseViewModel(get()) }
     factory {
-        DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get())
+        DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
     }
     factory {
-        HabitsViewModel(get(), get(), get(), get())
+        HabitsViewModel(get(), get(), get(), get(), get())
     }
     factory {
-        SleepViewModel(get(), get(), get(), get(), get(), get())
+        SleepViewModel(get(), get(), get(), get(), get(), get(), get())
     }
     factory {
         AgendaViewModel(get(), get(), get(), get(), get(), get(), get())

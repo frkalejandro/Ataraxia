@@ -1,5 +1,7 @@
 package com.ataraxia.ui.journal
 
+import com.ataraxia.ui.SectionTopAppBar
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -150,7 +152,7 @@ private fun EntryListScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Diario", fontWeight = FontWeight.SemiBold) })
+            SectionTopAppBar(title = "Diario")
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -333,13 +335,8 @@ private fun EntryEditorScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (isNew) "Nueva entrada" else "Editar",
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
+            SectionTopAppBar(
+                title = if (isNew) "Nueva entrada" else "Editar",
                 navigationIcon = {
                     IconButton(onClick = onDiscard) {
                         Icon(Icons.Default.Close, contentDescription = "Cerrar")

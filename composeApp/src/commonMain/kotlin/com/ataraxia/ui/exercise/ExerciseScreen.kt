@@ -24,9 +24,15 @@ import cafe.adriel.voyager.koin.koinScreenModel
 import com.ataraxia.domain.model.*
 import com.ataraxia.ui.TimerNotificationHint
 import com.ataraxia.ui.WellnessSection
+import com.ataraxia.ui.SectionTopAppBar
+import com.ataraxia.ui.RecordActions
+import com.ataraxia.ui.RecordDateField
+import com.ataraxia.ui.parseRecordDate
 import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 
 private val ExerciseOrange = Color(0xFFF08A5D)
 private val ExercisePurple = Color(0xFF6C63FF)
@@ -48,12 +54,11 @@ class ExerciseScreen : Screen {
         LaunchedEffect(state.error) {
             state.error?.let { snackbar.showSnackbar(it); vm.clearError() }
         }
-        Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-            Box(Modifier.padding(padding)) {
-                val draft = state.routineDraft
-                if (draft != null) RoutineEditor(state, draft, vm)
-                else ExerciseOverview(state, vm)
-            }
+        Box(Modifier.fillMaxSize()) {
+            val draft = state.routineDraft
+            if (draft != null) RoutineEditor(state, draft, vm)
+            else ExerciseOverview(state, vm)
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
         }
         state.exerciseDraft?.let { draft ->
             AlertDialog(
@@ -78,10 +83,11 @@ class ExerciseScreen : Screen {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
+    var history by remember { mutableStateOf(false) }
     var deleteExercise by remember { mutableStateOf<Exercise?>(null) }
     var deleteRoutine by remember { mutableStateOf<WorkoutRoutine?>(null) }
     Scaffold(topBar = {
-        TopAppBar(title = { Text(state.area?.label ?: "Ejercicio", fontWeight = FontWeight.SemiBold) },
+        SectionTopAppBar(title = state.area?.label ?: "Ejercicio",
             navigationIcon = {
                 if (state.area != null) IconButton(onClick = { vm.selectArea(null) }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Todas las zonas")
@@ -114,7 +120,10 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
                     }
                 }
                 item { ExerciseReminderCard() }
-                item { LastWorkoutCard(lastWorkoutDay(state.sessions)) }
+                item {
+                    LastWorkoutCard(lastWorkoutDay(state.sessions))
+                    TextButton(onClick = { history = true }) { Text("Historial completo · editar o borrar") }
+                }
                 item {
                     Text("Explora por zona", style = MaterialTheme.typography.titleLarge)
                     Text("Entra a una zona y agrega tus propios ejercicios.",
@@ -205,6 +214,26 @@ private fun ExerciseOverview(state: ExerciseUiState, vm: ExerciseViewModel) {
             item { Spacer(Modifier.height(16.dp)) }
         }
     }
+    if (history) AlertDialog(onDismissRequest = { if (!state.busy) history = false },
+        title = { Text("Historial de ejercicio") },
+        text = {
+            if (state.sessions.isEmpty()) Text("No hay sesiones registradas.")
+            else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(state.sessions, key = { it.id }) { session ->
+                    Column {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${session.date} · ${session.routine.name}", fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f))
+                            RecordActions(session.routine.name, enabled = !state.busy,
+                            deleteMessage = "Se borrará la sesión del ${session.date}. La rutina guardada se conservará.",
+                            onEdit = { history = false; vm.editSession(session) }, onDelete = { vm.deleteSession(session.id) })
+                        }
+                        RoutineDetails(session.routine)
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { history = false }, enabled = !state.busy) { Text("Cerrar") } })
     deleteExercise?.let { exercise ->
         ConfirmDialog("Eliminar ${exercise.name}", "Se quitará de esta zona. Las rutinas guardadas y las sesiones realizadas lo conservarán.",
             "Eliminar", { deleteExercise = null }, { vm.deleteExercise(exercise.id); deleteExercise = null })
@@ -295,9 +324,11 @@ private fun ActiveWorkoutCard(active: ActiveWorkout, busy: Boolean, vm: Exercise
 private fun RoutineEditor(state: ExerciseUiState, draft: RoutineDraft, vm: ExerciseViewModel) {
     var area by remember { mutableStateOf<BodyArea?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
-    val valid = draft.build() != null
+    val sessionDate = parseRecordDate(state.sessionDate)
+    val valid = draft.build() != null && (state.editingSession == null ||
+        (sessionDate != null && sessionDate <= Clock.System.todayIn(TimeZone.currentSystemDefault())))
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Configurar rutina") }, navigationIcon = {
+        SectionTopAppBar(title = if (state.editingSession == null) "Configurar rutina" else "Editar sesión realizada", navigationIcon = {
             IconButton(onClick = { confirmDiscard = true }, enabled = !state.busy) { Icon(Icons.Default.Close, "Cerrar configuración") }
         })
     }) { padding ->
@@ -308,6 +339,10 @@ private fun RoutineEditor(state: ExerciseUiState, draft: RoutineDraft, vm: Exerc
                 OutlinedTextField(draft.name, { vm.editRoutine(draft.copy(name = it)) }, label = { Text("Nombre de la rutina") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !state.busy, shape = RoundedCornerShape(14.dp))
                 }
+            }
+            if (state.editingSession != null) item {
+                RecordDateField(state.sessionDate, vm::setSessionDate)
+                Text("Solo se modificará esta sesión; la rutina guardada se conservará.", style = MaterialTheme.typography.bodySmall)
             }
             item {
                 Text("¿Cómo quieres entrenar?", style = MaterialTheme.typography.titleMedium)
@@ -378,7 +413,7 @@ private fun RoutineEditor(state: ExerciseUiState, draft: RoutineDraft, vm: Exerc
             item {
                 Button(onClick = vm::saveRoutine, enabled = valid && !state.busy, modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = ExercisePurple, contentColor = Color.White),
-                    shape = RoundedCornerShape(14.dp)) { Text("Guardar rutina") }
+                    shape = RoundedCornerShape(14.dp)) { Text(if (state.editingSession == null) "Guardar rutina" else "Guardar sesión") }
                 if (!valid) Text("Agrega un nombre, al menos un ejercicio y valores válidos. Las series y repeticiones deben ser enteros mayores que cero.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

@@ -1,5 +1,7 @@
 package com.ataraxia.ui.dashboard
 
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +32,7 @@ import com.ataraxia.ui.FocusTab
 import com.ataraxia.ui.JournalTab
 import com.ataraxia.ui.StateTab
 import com.ataraxia.ui.SleepTab
+import com.ataraxia.ui.FinanceTab
 import com.ataraxia.domain.model.*
 import kotlinx.datetime.*
 
@@ -60,14 +63,10 @@ class DashboardScreen : Screen {
             }
 
             // ── Cinta de agenda ────────────────────
-            item { SectionHeader("Hoy") }
-            item {
-                AgendaStrip(
-                    events = state.todayEvents,
-                    tasks  = state.todayTasks,
-                    onCompleteTask = vm::onCompleteTask,
-                )
-            }
+            item { SectionHeader("Tareas/eventos") }
+            item { AgendaPeriod("Hoy", state.todayEvents, state.todayTasks, true, vm::onCompleteTask) }
+            item { AgendaPeriod("Semana", state.weekEvents, state.weekTasks, false, vm::onCompleteTask) }
+            item { AgendaPeriod("Mes", state.monthEvents, state.monthTasks, false, vm::onCompleteTask) }
 
             // ── Hábitos ────────────────────────────
             item { SectionHeader("Hábitos") }
@@ -99,6 +98,15 @@ class DashboardScreen : Screen {
                     "${formatFocusTotal(state.focusSecondsToday)} de concentración hoy",
                     "Tiempo registrado en bloques completados", Color(0xFF6C63FF),
                     onClick = { navigator.current = FocusTab })
+            }
+            item { SectionHeader("Finanzas") }
+            item {
+                val finances = state.finances
+                DashboardShortcutCard(Icons.Default.AccountBalanceWallet,
+                    finances?.let { "${formatPesos(it.available)} disponibles" } ?: "Revisa tus finanzas",
+                    if (finances == null) "Abre Finanzas para volver a cargar tus datos"
+                    else if (finances.hasInitial) "Consulta tus ingresos y gastos" else "Define tu saldo inicial y organiza tu dinero",
+                    Color(0xFF238765), onClick = { navigator.current = FinanceTab })
             }
             item { SectionHeader("Diario") }
             item {
@@ -465,147 +473,73 @@ fun DashboardEmptyState(icon: ImageVector, message: String) {
 // ── Cinta de agenda ────────────────────────────
 
 @Composable
-fun AgendaStrip(
-    events: List<CalendarEvent>,
-    tasks: List<Task>,
-    onCompleteTask: (String) -> Unit,
+private fun AgendaPeriod(
+    title: String, events: List<CalendarEvent>, tasks: List<Task>,
+    initiallyExpanded: Boolean, onCompleteTask: (String) -> Unit,
 ) {
-    val pendingTasks = tasks.filter { !it.isCompleted }
-    val allDone      = tasks.isNotEmpty() && tasks.all { it.isCompleted }
-    val isEmpty      = events.isEmpty() && tasks.isEmpty()
+    var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("$title (${events.size + tasks.size})", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+            Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Contraer $title" else "Desplegar $title")
+        }
+        if (expanded) AgendaStrip(events, tasks, onCompleteTask)
+    }
+}
 
-    Card(
-        modifier  = Modifier.fillMaxWidth(),
-        shape     = RoundedCornerShape(16.dp),
-        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(0.dp),
-    ) {
-        Column(
-            modifier            = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            when {
-                isEmpty -> {
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text("✨", fontSize = 20.sp)
-                        Text(
-                            "Día libre — sin eventos ni tareas",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+@Composable
+fun AgendaStrip(events: List<CalendarEvent>, tasks: List<Task>, onCompleteTask: (String) -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (events.isEmpty() && tasks.isEmpty()) Text("Sin tareas ni eventos en este período")
+            val recurring = events.filter { it.recurrence == Recurrence.WEEKLY }.distinctBy { it.id }
+            val regularEvents = events.filter { it.recurrence != Recurrence.WEEKLY }
+            val dates = (regularEvents.map { it.date } + tasks.mapNotNull { it.dueDate }).distinct().sorted()
+            recurring.forEach { event ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(4.dp, 28.dp).background(parseColor(event.color)))
+                    Column(Modifier.weight(1f)) {
+                        Text(event.title, style = MaterialTheme.typography.bodyMedium)
+                        Text("Todos los días ${dayName(event.date.dayOfWeek)} del mes.", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                allDone -> {
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint     = Color(0xFF4CAF82),
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(
-                            "Todo completado por hoy",
-                            style  = MaterialTheme.typography.bodyMedium,
-                            color  = Color(0xFF4CAF82),
-                            fontWeight = FontWeight.Medium,
-                        )
+            }
+            dates.forEach { date ->
+                Text(formatAgendaDate(date), style = MaterialTheme.typography.labelMedium)
+                regularEvents.filter { it.date == date }.forEach { event ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(4.dp, 28.dp).background(parseColor(event.color)))
+                        Column(Modifier.weight(1f)) {
+                            Text(event.title, style = MaterialTheme.typography.bodyMedium)
+                            Text(if (event.isAllDay) "Todo el día" else event.startTime?.let { formatTime(it.hour, it.minute) } ?: "Sin hora",
+                                style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
-                else -> {
-                    // Eventos del día (máx 2)
-                    events.take(2).forEach { event ->
-                        val color = parseColor(event.color)
-                        Row(
-                            verticalAlignment     = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(4.dp, 28.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(color)
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    event.title,
-                                    style      = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines   = 1,
-                                    overflow   = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                )
-                                // ← variables locales para evitar smart cast imposible
-                                val st = event.startTime
-                                if (st != null) {
-                                    Text(
-                                        formatTime(st.hour, st.minute),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    // Tareas pendientes (máx 3)
-                    pendingTasks.take(3).forEach { task ->
-                        val pColor = when (task.priority) {
-                            TaskPriority.CRITICAL -> Color(0xFFE05252)
-                            TaskPriority.HIGH     -> Color(0xFFF5A623)
-                            TaskPriority.MEDIUM   -> Color(0xFF6C63FF)
-                            TaskPriority.LOW      -> Color(0xFF9E9E9E)
-                        }
-                        Row(
-                            modifier              = Modifier.fillMaxWidth(),
-                            verticalAlignment     = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(pColor)
-                            )
-                            Text(
-                                task.title,
-                                style    = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                            Checkbox(
-                                checked         = false,
-                                onCheckedChange = { onCompleteTask(task.id) },
-                                modifier        = Modifier.size(20.dp),
-                                colors          = CheckboxDefaults.colors(
-                                    uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    checkedColor   = Color(0xFF4CAF82),
-                                ),
-                            )
-                        }
-                    }
-                    // Indicador de cuántas más hay
-                    val extraTasks  = (pendingTasks.size - 3).coerceAtLeast(0)
-                    val extraEvents = (events.size - 2).coerceAtLeast(0)
-                    if (extraTasks > 0 || extraEvents > 0) {
-                        val parts = buildList {
-                            if (extraEvents > 0) add("$extraEvents evento${if (extraEvents > 1) "s" else ""} más")
-                            if (extraTasks  > 0) add("$extraTasks tarea${if (extraTasks  > 1) "s" else ""} más")
-                        }
-                        Text(
-                            parts.joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                tasks.filter { it.dueDate == date }.forEach { task ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(task.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                            textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null)
+                        Checkbox(checked = task.isCompleted, enabled = !task.isCompleted,
+                            onCheckedChange = { onCompleteTask(task.id) })
                     }
                 }
             }
         }
     }
+}
+
+private fun dayName(day: DayOfWeek): String = when (day) {
+    DayOfWeek.MONDAY -> "Lunes"; DayOfWeek.TUESDAY -> "Martes"; DayOfWeek.WEDNESDAY -> "Miércoles"
+    DayOfWeek.THURSDAY -> "Jueves"; DayOfWeek.FRIDAY -> "Viernes"; DayOfWeek.SATURDAY -> "Sábado"; DayOfWeek.SUNDAY -> "Domingo"
+}
+
+private fun formatAgendaDate(date: LocalDate): String {
+    val months = listOf("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    return "${dayName(date.dayOfWeek)} ${date.dayOfMonth} de ${months[date.monthNumber - 1]}, ${date.year}"
 }
 
 /** KMP-safe time formatting — no usa String.format de Java */

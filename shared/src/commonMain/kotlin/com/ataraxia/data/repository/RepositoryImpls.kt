@@ -18,6 +18,8 @@ import kotlinx.datetime.*
 
 class SleepRepositoryImpl(private val db: AtaraxiaDatabase) : SleepRepository {
 
+    override suspend fun deleteSleepGoal() = withContext(Dispatchers.Default) { db.sleepQueries.deleteSleepGoal() }
+
     private val q get() = db.sleepQueries
 
     override fun observeSleepGoal(): Flow<SleepGoal?> =
@@ -54,6 +56,10 @@ class SleepRepositoryImpl(private val db: AtaraxiaDatabase) : SleepRepository {
         }
 
     override suspend fun saveSleepEntry(entry: SleepEntry) = withContext(Dispatchers.Default) {
+        require(entry.quality in 1..5 && entry.durationMinutes in 1..1440)
+        db.transaction {
+        val existing = q.selectSleepEntryByDate(entry.date.toString()).executeAsOneOrNull()
+        require(existing == null || existing.id == entry.id) { "Ya existe un registro para esa fecha. Edítalo desde el historial." }
         q.upsertSleepEntry(
             id              = entry.id,
             date            = entry.date.toString(),
@@ -64,6 +70,7 @@ class SleepRepositoryImpl(private val db: AtaraxiaDatabase) : SleepRepository {
             note            = entry.note,
             createdAt       = entry.createdAt.toEpochMilliseconds(),
         )
+        }
     }
 
     override suspend fun deleteSleepEntry(id: String) = withContext(Dispatchers.Default) {
@@ -242,18 +249,22 @@ class TaskRepositoryImpl(private val db: AtaraxiaDatabase) : TaskRepository {
 //  CALENDAR EVENTS
 // ─────────────────────────────────────────────
 
-class CalendarRepositoryImpl(private val db: AtaraxiaDatabase) : CalendarRepository {
+class CalendarRepositoryImpl(
+    private val db: AtaraxiaDatabase,
+    private val notifications: com.ataraxia.notifications.EventNotificationScheduler =
+        com.ataraxia.notifications.NoOpEventNotificationScheduler(),
+) : CalendarRepository {
 
     private val q get() = db.agendaQueries
 
     override fun observeEventsForDate(date: LocalDate): Flow<List<CalendarEvent>> =
-        q.selectEventsForDate(date.toString()).asFlow().mapToList(Dispatchers.Default)
-            .map { it.map { r -> r.toDomain() } }
+        observeEventsForRange(date, date)
 
     override fun observeEventsForRange(from: LocalDate, to: LocalDate): Flow<List<CalendarEvent>> =
         q.selectEventsForDateRange(from.toString(), to.toString())
             .asFlow().mapToList(Dispatchers.Default)
-            .map { it.map { r -> r.toDomain() } }
+            .map { rows -> rows.flatMap { it.toDomain().occurrences(from, to) }
+                .sortedWith(compareBy<CalendarEvent> { it.date }.thenBy { it.startTime == null }.thenBy { it.startTime }) }
 
     override suspend fun getEventById(id: String): CalendarEvent? =
         withContext(Dispatchers.Default) {
@@ -277,10 +288,12 @@ class CalendarRepositoryImpl(private val db: AtaraxiaDatabase) : CalendarReposit
             createdAt       = event.createdAt.toEpochMilliseconds(),
             updatedAt       = event.updatedAt.toEpochMilliseconds(),
         )
+        notifications.schedule(event)
     }
 
     override suspend fun deleteEvent(id: String) = withContext(Dispatchers.Default) {
         q.deleteEvent(id)
+        notifications.cancel(id)
     }
 
     private fun com.ataraxia.db.CalendarEvent.toDomain() = CalendarEvent(

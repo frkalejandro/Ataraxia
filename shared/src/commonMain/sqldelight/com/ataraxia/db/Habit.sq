@@ -30,6 +30,9 @@ CREATE INDEX idx_habit_entry_habit ON HabitEntry(habitId);
 selectAllHabits:
 SELECT * FROM Habit WHERE isArchived = 0 ORDER BY category ASC, order_index ASC;
 
+selectArchivedHabits:
+SELECT * FROM Habit WHERE isArchived = 1 ORDER BY category ASC, order_index ASC;
+
 selectHabitById:
 SELECT * FROM Habit WHERE id = ?;
 
@@ -38,6 +41,7 @@ INSERT OR REPLACE INTO Habit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);
 
 updateHabit:
 UPDATE Habit SET
+    isArchived  = :isArchived,
     title       = :title,
     description = :description,
     icon        = :icon,
@@ -55,6 +59,9 @@ UPDATE Habit SET isArchived = 1, updatedAt = :updatedAt WHERE id = :id;
 
 deleteHabit:
 DELETE FROM Habit WHERE id = :id;
+
+deleteEntriesForHabit:
+DELETE FROM HabitEntry WHERE habitId = :habitId;
 
 selectEntriesForHabit:
 SELECT * FROM HabitEntry WHERE habitId = :habitId ORDER BY date DESC;

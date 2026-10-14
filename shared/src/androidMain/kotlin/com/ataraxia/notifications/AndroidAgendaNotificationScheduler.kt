@@ -99,8 +99,17 @@ class AgendaReminderRescheduleReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_MY_PACKAGE_REPLACED,
-            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED ->
+            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> {
                 AndroidAgendaNotificationScheduler(context).scheduleDailyReminders()
+                val result = goAsync()
+                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                    try {
+                        withTimeout(8000) { AndroidEventNotificationScheduler(context).reschedule() }
+                    } catch (error: Exception) {
+                        Log.e("EventReminders", "No se pudieron reprogramar los eventos", error)
+                    } finally { result.finish() }
+                }
+            }
         }
     }
 }

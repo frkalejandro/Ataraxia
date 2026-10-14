@@ -5,6 +5,37 @@ import com.ataraxia.notifications.*
 import kotlin.test.*
 
 class FocusNotificationsTest {
+    @Test fun finishPausesAtCurrentTimeAndDiscardResetsFocus() {
+        val notifications = Notifications()
+        val controller = FocusController(FocusTimer(), notifications)
+        controller.intention = "Leer"
+        controller.timer = controller.timer.start(1000)
+        assertEquals(73, controller.prepareFinish(74000))
+        assertNull(controller.timer.deadlineMillis)
+        assertNull(notifications.updates.last())
+        // Cancelling the dialog leaves precisely this paused progress to resume.
+        assertEquals(1427, controller.timer.remainingSeconds)
+        controller.finish()
+        assertEquals(FocusTimer(), controller.timer)
+        assertEquals("", controller.intention)
+        assertEquals(controller.timer, notifications.saved)
+    }
+
+    @Test fun finishingAtDeadlineRecordsOnceAndDoesNotSaveBreakTime() {
+        val completed = mutableListOf<FocusTimer>()
+        val controller = FocusController(FocusTimer(), Notifications(), completed::add)
+        controller.timer = controller.timer.start(0)
+        assertEquals(0, controller.prepareFinish(1500000))
+        assertEquals(1, completed.size)
+        controller.timer = controller.timer.start(1600000)
+        assertEquals(0, controller.prepareFinish(1660000))
+        controller.finish()
+        assertEquals(com.ataraxia.domain.model.FocusPhase.FOCUS, controller.timer.phase)
+        assertEquals(1500, controller.timer.remainingSeconds)
+        assertEquals(1, controller.timer.completedSessions)
+        assertEquals(1, completed.size)
+    }
+
     private class Notifications : TimerNotificationScheduler {
         val updates = mutableListOf<TimerNotice?>()
         var saved: FocusTimer? = null

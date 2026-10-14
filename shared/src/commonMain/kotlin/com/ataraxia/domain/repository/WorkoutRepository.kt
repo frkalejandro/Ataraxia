@@ -12,6 +12,8 @@ interface WorkoutRepository {
     suspend fun deleteExercise(id: String)
     suspend fun saveRoutine(routine: WorkoutRoutine)
     suspend fun deleteRoutine(id: String)
+    suspend fun updateSession(session: WorkoutSession)
+    suspend fun deleteSession(id: String)
     suspend fun saveActive(workout: ActiveWorkout)
     suspend fun discardActive()
     suspend fun completeActive(completedAt: Long, date: String)

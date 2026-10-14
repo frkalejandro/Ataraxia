@@ -1,0 +1,9 @@
+CREATE TABLE FinanceEntry (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX idx_finance_created ON FinanceEntry(createdAt);

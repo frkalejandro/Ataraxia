@@ -1,5 +1,14 @@
 package com.ataraxia.ui.agenda
 
+import com.ataraxia.ui.SectionTopAppBar
+import com.ataraxia.ui.RecordActions
+import com.ataraxia.ui.RecordError
+import com.ataraxia.ui.RecordDateField
+import com.ataraxia.ui.parseRecordDate
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.CancellationException
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,10 +61,15 @@ data class AgendaUiState(
     val events: List<CalendarEvent>          = emptyList(),
     // Fechas del mes con eventos (punto morado) y con tareas (punto naranja)
     val monthDatesWithEvents: Set<LocalDate> = emptySet(),
+    val monthEventColors: Map<LocalDate, String> = emptyMap(),
     val monthDatesWithTasks: Set<LocalDate>  = emptySet(),
     val isLoading: Boolean                   = true,
     val showAddTaskSheet: Boolean            = false,
     val showAddEventSheet: Boolean           = false,
+    val editingTask: Task? = null,
+    val editingEvent: CalendarEvent? = null,
+    val busy: Boolean = false,
+    val error: String? = null,
 )
 
 class AgendaViewModel(
@@ -120,6 +136,7 @@ class AgendaViewModel(
                 .collect { (events, tasks) ->
                     _state.update { it.copy(
                         monthDatesWithEvents = events.map { e -> e.date }.toSet(),
+                        monthEventColors = events.associate { it.date to it.color },
                         monthDatesWithTasks  = tasks
                             .filter { t -> val d = t.dueDate; d != null && !t.isCompleted }
                             .mapNotNull { it.dueDate }
@@ -133,58 +150,85 @@ class AgendaViewModel(
         screenModelScope.launch { completeTask(id, completed) }
     }
 
+    private fun mutate(action: suspend () -> Unit) {
+        if (state.value.busy) return
+        _state.update { it.copy(busy = true, error = null) }
+        screenModelScope.launch {
+            try { action() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(error = "No se pudo guardar el cambio. Vuelve a intentarlo.") } }
+            finally { _state.update { it.copy(busy = false) } }
+        }
+    }
+    fun clearError() { _state.update { it.copy(error = null) } }
+    fun editTask(task: Task) { _state.update { it.copy(editingTask = task, showAddTaskSheet = true) } }
+    fun editEvent(event: CalendarEvent) = mutate {
+        val series = calendarRepo.getEventById(event.id) ?: return@mutate
+        _state.update { it.copy(editingEvent = series, showAddEventSheet = true) }
+    }
+    fun deleteTask(task: Task) = mutate { taskRepo.deleteTask(task.id) }
+    fun deleteEvent(event: CalendarEvent) = mutate { calendarRepo.deleteEvent(event.id) }
+
     fun onSaveTask(
+        date: LocalDate,
         title: String,
         description: String,
         priority: TaskPriority,
         energy: EnergyLevel,
     ) {
-        screenModelScope.launch {
+        val original = state.value.editingTask
+        mutate {
             val now = Clock.System.now()
-            saveTask(Task(
-                id          = uuid4().toString(),
+            val base = original ?: Task(id = uuid4().toString(), title = title, createdAt = now, updatedAt = now)
+            saveTask(base.copy(
                 title       = title,
                 description = description,
-                dueDate     = _state.value.selectedDate,
+                dueDate     = date,
                 priority    = priority,
                 energyLevel = energy,
-                createdAt   = now,
+                createdAt   = base.createdAt,
                 updatedAt   = now,
             ))
-            _state.update { it.copy(showAddTaskSheet = false) }
+            _state.update { it.copy(showAddTaskSheet = false, editingTask = null) }
         }
     }
 
     fun onSaveEvent(
+        date: LocalDate,
         title: String,
         startTime: LocalTime?,
         endTime: LocalTime?,
         isAllDay: Boolean,
         color: String,
+        weekly: Boolean,
+        recurrenceEnd: LocalDate?,
     ) {
-        screenModelScope.launch {
+        val original = state.value.editingEvent
+        mutate {
             val now = Clock.System.now()
             val selectedDate = _state.value.selectedDate
-            saveEvent(CalendarEvent(
-                id        = uuid4().toString(),
+            val base = original ?: CalendarEvent(id = uuid4().toString(), title = title, date = date, createdAt = now, updatedAt = now)
+            saveEvent(base.copy(
                 title     = title,
-                date      = selectedDate,
+                date      = date,
                 startTime = startTime,
                 endTime   = endTime,
                 isAllDay  = isAllDay,
                 color     = color,
-                createdAt = now,
+                recurrence = if (weekly) Recurrence.WEEKLY else Recurrence.NONE,
+                recurrenceEnd = if (weekly) recurrenceEnd else null,
+                createdAt = base.createdAt,
                 updatedAt = now,
             ))
-            _state.update { it.copy(showAddEventSheet = false) }
+            _state.update { it.copy(showAddEventSheet = false, editingEvent = null) }
             collectMonthContent(selectedDate)
         }
     }
 
-    fun showAddTaskSheet()  { _state.update { it.copy(showAddTaskSheet  = true) } }
-    fun hideAddTaskSheet()  { _state.update { it.copy(showAddTaskSheet  = false) } }
-    fun showAddEventSheet() { _state.update { it.copy(showAddEventSheet = true) } }
-    fun hideAddEventSheet() { _state.update { it.copy(showAddEventSheet = false) } }
+    fun showAddTaskSheet()  { _state.update { it.copy(showAddTaskSheet  = true, editingTask = null) } }
+    fun hideAddTaskSheet()  { _state.update { it.copy(showAddTaskSheet  = false, editingTask = null) } }
+    fun showAddEventSheet() { _state.update { it.copy(showAddEventSheet = true, editingEvent = null) } }
+    fun hideAddEventSheet() { _state.update { it.copy(showAddEventSheet = false, editingEvent = null) } }
 }
 
 // ─────────────────────────────────────────────
@@ -200,8 +244,8 @@ class AgendaScreen : Screen {
 
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text("Agenda", fontWeight = FontWeight.SemiBold) },
+                SectionTopAppBar(
+                    title = "Agenda",
                     actions = {
                         IconButton(onClick = {
                             vm.onSwitchView(
@@ -251,6 +295,8 @@ class AgendaScreen : Screen {
                         selectedDate     = state.selectedDate,
                         datesWithContent =
                             state.monthDatesWithEvents + state.monthDatesWithTasks,
+                        eventColors      = state.monthEventColors,
+                        onMonthChanged   = vm::onSelectDate,
                         onDateSelected   = vm::onSelectDate,
                     )
                     HorizontalDivider()
@@ -261,22 +307,27 @@ class AgendaScreen : Screen {
                 DayContent(
                     state      = state,
                     onComplete = vm::onCompleteTask,
+                    onEditTask = vm::editTask, onDeleteTask = vm::deleteTask,
+                    onEditEvent = vm::editEvent, onDeleteEvent = vm::deleteEvent,
                 )
             }
         }
 
         if (state.showAddTaskSheet) {
             AddTaskSheet(
+                initial = state.editingTask, selectedDate = state.selectedDate, busy = state.busy,
                 onDismiss = vm::hideAddTaskSheet,
-                onSave    = { t, d, p, e -> vm.onSaveTask(t, d, p, e) },
+                onSave    = { date, t, d, p, e -> vm.onSaveTask(date, t, d, p, e) },
             )
         }
         if (state.showAddEventSheet) {
             AddEventSheet(
+                initial = state.editingEvent, selectedDate = state.selectedDate, busy = state.busy,
                 onDismiss = vm::hideAddEventSheet,
-                onSave    = { t, st, et, allDay, c -> vm.onSaveEvent(t, st, et, allDay, c) },
+                onSave    = { date, t, st, et, allDay, c, weekly, end -> vm.onSaveEvent(date, t, st, et, allDay, c, weekly, end) },
             )
         }
+        RecordError(state.error, vm::clearError)
     }
 }
 
@@ -365,6 +416,8 @@ private fun WeekStrip(
 private fun MonthCalendar(
     selectedDate: LocalDate,
     datesWithContent: Set<LocalDate>,
+    eventColors: Map<LocalDate, String>,
+    onMonthChanged: (LocalDate) -> Unit,
     onDateSelected: (LocalDate) -> Unit,
 ) {
     val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
@@ -399,6 +452,7 @@ private fun MonthCalendar(
         ) {
             IconButton(onClick = {
                 displayMonth = displayMonth.minus(1, DateTimeUnit.MONTH)
+                onMonthChanged(displayMonth)
             }) {
                 Icon(Icons.Default.ChevronLeft, null, modifier = Modifier.size(18.dp))
             }
@@ -409,6 +463,7 @@ private fun MonthCalendar(
             )
             IconButton(onClick = {
                 displayMonth = displayMonth.plus(1, DateTimeUnit.MONTH)
+                onMonthChanged(displayMonth)
             }) {
                 Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp))
             }
@@ -480,7 +535,7 @@ private fun MonthCalendar(
                                             Modifier
                                                 .size(4.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF6C63FF).copy(alpha = 0.7f))
+                                                .background(eventColors[date]?.let(::parseColor) ?: Color(0xFF6C63FF).copy(alpha = 0.7f))
                                         )
                                     }
                                 }
@@ -501,13 +556,32 @@ private fun MonthCalendar(
 private fun DayContent(
     state: AgendaUiState,
     onComplete: (String, Boolean) -> Unit,
+    onEditTask: (Task) -> Unit, onDeleteTask: (Task) -> Unit,
+    onEditEvent: (CalendarEvent) -> Unit, onDeleteEvent: (CalendarEvent) -> Unit,
 ) {
+    var showFinished by rememberSaveable { mutableStateOf(false) }
+    var now by remember { mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+            delay(1000)
+        }
+    }
+    val visibleEvents = state.events.filter { showFinished || it.isUpcoming(now) }
+    val pending = state.tasks.filter { !it.isCompleted }
+    val completed = state.tasks.filter { it.isCompleted }
     LazyColumn(
         contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Mostrar finalizadas", Modifier.weight(1f))
+                Switch(checked = showFinished, onCheckedChange = { showFinished = it })
+            }
+        }
         // Eventos
-        if (state.events.isNotEmpty()) {
+        if (visibleEvents.isNotEmpty()) {
             item {
                 Text(
                     "Eventos",
@@ -516,8 +590,11 @@ private fun DayContent(
                     color      = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            items(state.events, key = { "ev_${it.id}" }) { event ->
-                EventChip(event)
+            items(visibleEvents, key = { "ev_${it.id}" }) { event ->
+                EventChip(event) {
+                    RecordActions(event.title, enabled = !state.busy,
+                        onEdit = { onEditEvent(event) }, onDelete = { onDeleteEvent(event) })
+                }
             }
             item { Spacer(Modifier.height(4.dp)) }
         }
@@ -548,7 +625,7 @@ private fun DayContent(
         }
 
         // Estado vacío
-        if (state.tasks.isEmpty() && state.events.isEmpty()) {
+        if (pending.isEmpty() && (!showFinished || completed.isEmpty()) && visibleEvents.isEmpty()) {
             item {
                 Column(
                     Modifier
@@ -560,7 +637,7 @@ private fun DayContent(
                     Text("✨", fontSize = 40.sp)
                     Text("Día libre", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "No hay tareas ni eventos.",
+                        "No hay tareas ni eventos pendientes.",
                         style     = MaterialTheme.typography.bodySmall,
                         color     = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -569,13 +646,13 @@ private fun DayContent(
             }
         }
 
-        val pending   = state.tasks.filter { !it.isCompleted }
-        val completed = state.tasks.filter { it.isCompleted }
-
         items(pending,   key = { "task_${it.id}" })  { task ->
-            AgendaTaskRow(task, onComplete = { onComplete(task.id, it) })
+            AgendaTaskRow(task, onComplete = { onComplete(task.id, it) }) {
+                RecordActions(task.title, enabled = !state.busy,
+                    onEdit = { onEditTask(task) }, onDelete = { onDeleteTask(task) })
+            }
         }
-        if (completed.isNotEmpty()) {
+        if (showFinished && completed.isNotEmpty()) {
             item {
                 Text(
                     "Completadas",
@@ -585,7 +662,10 @@ private fun DayContent(
                 )
             }
             items(completed, key = { "done_${it.id}" }) { task ->
-                AgendaTaskRow(task, onComplete = { onComplete(task.id, it) })
+                AgendaTaskRow(task, onComplete = { onComplete(task.id, it) }) {
+                    RecordActions(task.title, enabled = !state.busy,
+                        onEdit = { onEditTask(task) }, onDelete = { onDeleteTask(task) })
+                }
             }
         }
 
@@ -598,7 +678,7 @@ private fun DayContent(
 // ─────────────────────────────────────────────
 
 @Composable
-private fun EventChip(event: CalendarEvent) {
+private fun EventChip(event: CalendarEvent, actions: @Composable () -> Unit) {
     val color = parseColor(event.color)
     // Variables locales para evitar smart cast imposible desde módulo externo
     val startTime = event.startTime
@@ -639,6 +719,7 @@ private fun EventChip(event: CalendarEvent) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            actions()
         }
     }
 }
@@ -648,7 +729,7 @@ private fun EventChip(event: CalendarEvent) {
 // ─────────────────────────────────────────────
 
 @Composable
-private fun AgendaTaskRow(task: Task, onComplete: (Boolean) -> Unit) {
+private fun AgendaTaskRow(task: Task, onComplete: (Boolean) -> Unit, actions: @Composable () -> Unit) {
     val priorityColor = when (task.priority) {
         TaskPriority.CRITICAL -> Color(0xFFE05252)
         TaskPriority.HIGH     -> Color(0xFFF5A623)
@@ -724,6 +805,7 @@ private fun AgendaTaskRow(task: Task, onComplete: (Boolean) -> Unit) {
                 onCheckedChange = onComplete,
                 colors          = CheckboxDefaults.colors(checkedColor = Color(0xFF4CAF82)),
             )
+            actions()
         }
     }
 }
@@ -735,25 +817,29 @@ private fun AgendaTaskRow(task: Task, onComplete: (Boolean) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddTaskSheet(
+    initial: Task?, selectedDate: LocalDate, busy: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, String, TaskPriority, EnergyLevel) -> Unit,
+    onSave: (LocalDate, String, String, TaskPriority, EnergyLevel) -> Unit,
 ) {
-    var title    by remember { mutableStateOf("") }
-    var desc     by remember { mutableStateOf("") }
-    var priority by remember { mutableStateOf(TaskPriority.MEDIUM) }
-    var energy   by remember { mutableStateOf(EnergyLevel.MEDIUM) }
+    var dateText by remember { mutableStateOf(selectedDate.toString()) }
+    val date = parseRecordDate(dateText)
+    var title    by remember { mutableStateOf(initial?.title ?: "") }
+    var desc     by remember { mutableStateOf(initial?.description ?: "") }
+    var priority by remember { mutableStateOf(initial?.priority ?: TaskPriority.MEDIUM) }
+    var energy   by remember { mutableStateOf(initial?.energyLevel ?: EnergyLevel.MEDIUM) }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         Column(
             modifier            = Modifier
+                .verticalScroll(rememberScrollState()).imePadding()
                 .padding(horizontal = 24.dp)
                 .padding(bottom     = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Nueva tarea", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(if (initial == null) "Nueva tarea" else "Editar tarea", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
                 value = title, onValueChange = { title = it },
@@ -766,9 +852,12 @@ private fun AddTaskSheet(
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
             )
 
+            RecordDateField(dateText, { dateText = it })
             Text("Prioridad", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TaskPriority.entries.forEach { p ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TaskPriority.entries.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { p ->
                     val pColor = when (p) {
                         TaskPriority.CRITICAL -> Color(0xFFE05252)
                         TaskPriority.HIGH     -> Color(0xFFF5A623)
@@ -792,6 +881,7 @@ private fun AddTaskSheet(
                         ),
                     )
                 }
+                }
             }
 
             Text("Energía requerida", style = MaterialTheme.typography.labelLarge)
@@ -810,14 +900,16 @@ private fun AddTaskSheet(
                     )
                 }
             }
+            }
 
             Button(
-                onClick  = { if (title.isNotBlank()) onSave(title, desc, priority, energy) },
+                onClick  = { date?.let { onSave(it, title.trim(), desc, priority, energy) } },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape    = RoundedCornerShape(14.dp),
                 colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
-                enabled  = title.isNotBlank(),
+                enabled  = !busy && title.isNotBlank() && date != null,
             ) { Text("Guardar tarea", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancelar") }
         }
     }
 }
@@ -829,30 +921,39 @@ private fun AddTaskSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddEventSheet(
+    initial: CalendarEvent?, selectedDate: LocalDate, busy: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, LocalTime?, LocalTime?, Boolean, String) -> Unit,
+    onSave: (LocalDate, String, LocalTime?, LocalTime?, Boolean, String, Boolean, LocalDate?) -> Unit,
 ) {
-    var title    by remember { mutableStateOf("") }
-    var isAllDay by remember { mutableStateOf(false) }
-    var startH   by remember { mutableStateOf(9) }
-    var startM   by remember { mutableStateOf(0) }
-    var endH     by remember { mutableStateOf(10) }
-    var endM     by remember { mutableStateOf(0) }
-    var color    by remember { mutableStateOf("#4CAF82") }
+    var dateText by remember { mutableStateOf((initial?.date ?: selectedDate).toString()) }
+    val date = parseRecordDate(dateText)
+    var title    by remember { mutableStateOf(initial?.title ?: "") }
+    var weekly by remember { mutableStateOf(initial?.recurrence == Recurrence.WEEKLY) }
+    var indefinite by remember { mutableStateOf(initial?.recurrenceEnd == null) }
+    var untilText by remember { mutableStateOf((initial?.recurrenceEnd ?: selectedDate.plus(1, DateTimeUnit.YEAR)).toString()) }
+    val until = parseRecordDate(untilText)
+    val recurrenceValid = !weekly || indefinite || (until != null && date != null && until >= date)
+    var isAllDay by remember { mutableStateOf(initial?.isAllDay ?: false) }
+    var startH   by remember { mutableStateOf(initial?.startTime?.hour ?: 9) }
+    var startM   by remember { mutableStateOf(initial?.startTime?.minute ?: 0) }
+    var endH     by remember { mutableStateOf(initial?.endTime?.hour ?: 10) }
+    var endM     by remember { mutableStateOf(initial?.endTime?.minute ?: 0) }
+    var color    by remember { mutableStateOf(initial?.color ?: "#4CAF82") }
 
-    val eventColors = listOf("#4CAF82", "#2196F3", "#6C63FF", "#F5A623", "#E05252", "#E91E8C")
+    val eventColors = listOf("#4CAF82", "#2196F3", "#6C63FF", "#F5A623", "#E05252", "#E91E8C", "#00ACC1", "#7E57C2", "#00897B", "#FB8C00", "#D81B60", "#5E35B1")
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         Column(
             modifier            = Modifier
+                .verticalScroll(rememberScrollState()).imePadding()
                 .padding(horizontal = 24.dp)
                 .padding(bottom     = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Nuevo evento", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(if (initial == null) "Nuevo evento" else "Editar evento", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
                 value = title, onValueChange = { title = it },
@@ -860,9 +961,29 @@ private fun AddEventSheet(
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
             )
 
+            RecordDateField(dateText, { dateText = it })
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Todo el día", Modifier.weight(1f))
                 Switch(checked = isAllDay, onCheckedChange = { isAllDay = it })
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Evento semanal", Modifier.weight(1f))
+                Switch(checked = weekly, onCheckedChange = { weekly = it })
+            }
+            if (weekly) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("¿Semanal indefinida?", Modifier.weight(1f))
+                    Switch(checked = indefinite, onCheckedChange = { indefinite = it })
+                }
+                if (!indefinite) {
+                    Text("Repetir hasta (inclusive)")
+                    RecordDateField(untilText, { untilText = it })
+                    if (!recurrenceValid) Text("El término debe ser igual o posterior al inicio.", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (initial?.recurrence == Recurrence.WEEKLY) {
+                Text("Los cambios se aplican a toda la serie semanal. Eliminar el evento elimina toda la serie.", style = MaterialTheme.typography.bodySmall)
             }
 
             if (!isAllDay) {
@@ -898,8 +1019,10 @@ private fun AddEventSheet(
             }
 
             Text("Color", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                eventColors.forEach { c ->
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                eventColors.chunked(6).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { c ->
                     val cc       = parseColor(c)
                     val selected = c == color
                     Box(
@@ -919,6 +1042,8 @@ private fun AddEventSheet(
                             .clickable { color = c }
                     )
                 }
+                }
+            }
             }
 
             Button(
@@ -926,14 +1051,15 @@ private fun AddEventSheet(
                     if (title.isNotBlank()) {
                         val st = if (!isAllDay) LocalTime(startH, startM) else null
                         val et = if (!isAllDay) LocalTime(endH, endM) else null
-                        onSave(title, st, et, isAllDay, color)
+                        date?.let { onSave(it, title.trim(), st, et, isAllDay, color, weekly, if (weekly && !indefinite) until else null) }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape    = RoundedCornerShape(14.dp),
                 colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF82)),
-                enabled  = title.isNotBlank(),
+                enabled  = !busy && title.isNotBlank() && date != null && recurrenceValid,
             ) { Text("Guardar evento", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancelar") }
         }
     }
 }
@@ -942,7 +1068,7 @@ private fun AddEventSheet(
 private fun EventStepper(value: Int, range: IntRange, step: Int = 1, onChange: (Int) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(
-            onClick  = { onChange(if (value + step > range.last) range.first else value + step) },
+            onClick  = { onChange(range.first + (value - range.first + step) % (range.last - range.first + 1)) },
             modifier = Modifier.size(28.dp),
         ) { Icon(Icons.Default.KeyboardArrowUp, null, modifier = Modifier.size(18.dp)) }
         Text(
@@ -951,7 +1077,7 @@ private fun EventStepper(value: Int, range: IntRange, step: Int = 1, onChange: (
             fontWeight = FontWeight.Bold,
         )
         IconButton(
-            onClick  = { onChange(if (value - step < range.first) range.last else value - step) },
+            onClick  = { onChange(range.first + (value - range.first - step + (range.last - range.first + 1)) % (range.last - range.first + 1)) },
             modifier = Modifier.size(28.dp),
         ) { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(18.dp)) }
     }

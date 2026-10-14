@@ -1,0 +1,25 @@
+CREATE TABLE FinanceEntry (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX idx_finance_created ON FinanceEntry(createdAt);
+
+selectEntries:
+SELECT * FROM FinanceEntry ORDER BY createdAt DESC, rowid DESC;
+
+insertEntry:
+INSERT INTO FinanceEntry(id, name, category, amount, createdAt)
+VALUES (:id, :name, :category, :amount, :createdAt);
+
+selectEntry:
+SELECT * FROM FinanceEntry WHERE id = :id;
+
+updateEntry:
+UPDATE FinanceEntry SET name = :name, category = :category, amount = :amount WHERE id = :id;
+
+deleteEntry:
+DELETE FROM FinanceEntry WHERE id = :id;

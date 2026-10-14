@@ -13,12 +13,13 @@ val databaseModule = module {
 }
 
 val repositoryModule = module {
+    single<FinanceRepository> { FinanceRepositoryImpl(get()) }
     single<FocusRepository> { FocusRepositoryImpl(get()) }
     single<WorkoutRepository> { WorkoutRepositoryImpl(get()) }
     single<HabitRepository>    { HabitRepositoryImpl(get()) }
     single<SleepRepository>    { SleepRepositoryImpl(get()) }
     single<TaskRepository>     { TaskRepositoryImpl(get()) }
-    single<CalendarRepository> { CalendarRepositoryImpl(get()) }
+    single<CalendarRepository> { CalendarRepositoryImpl(get(), get()) }
     single<JournalRepository>  { JournalRepositoryImpl(get()) }
     single<DailyStateRepository> { DailyStateRepositoryImpl(get()) }
 }

@@ -11,13 +11,13 @@ actual class DatabaseDriverFactory {
         val dbDir  = File(System.getProperty("user.home"), ".ataraxia")
         dbDir.mkdirs()
         val dbFile = File(dbDir, "ataraxia.db")
-        val exists = dbFile.exists()
 
         val driver = JdbcSqliteDriver(
             url        = "jdbc:sqlite:${dbFile.absolutePath}",
             properties = Properties().apply { put("foreign_keys", "true") },
             schema     = AtaraxiaDatabase.Schema,
-            migrateEmptySchema = !exists,
+            // A new database needs Schema.create, not migrations from version zero.
+            migrateEmptySchema = false,
         )
         return driver
     }

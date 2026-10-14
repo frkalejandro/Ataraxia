@@ -50,6 +50,8 @@ data class ExerciseUiState(
     val area: BodyArea? = null,
     val exerciseDraft: ExerciseDraft? = null,
     val routineDraft: RoutineDraft? = null,
+    val editingSession: WorkoutSession? = null,
+    val sessionDate: String = "",
 )
 
 class ExerciseViewModel(private val repo: WorkoutRepository) : ScreenModel {
@@ -92,7 +94,14 @@ class ExerciseViewModel(private val repo: WorkoutRepository) : ScreenModel {
 
     fun selectArea(area: BodyArea?) { mutableState.update { it.copy(area = area) } }
     fun editExercise(draft: ExerciseDraft?) { mutableState.update { it.copy(exerciseDraft = draft) } }
-    fun editRoutine(draft: RoutineDraft?) { mutableState.update { it.copy(routineDraft = draft) } }
+    fun editRoutine(draft: RoutineDraft?) {
+        mutableState.update { it.copy(routineDraft = draft, editingSession = if (draft == null) null else it.editingSession) }
+    }
+    fun editSession(session: WorkoutSession) {
+        mutableState.update { it.copy(editingSession = session, sessionDate = session.date, routineDraft = session.routine.toDraft()) }
+    }
+    fun setSessionDate(value: String) { mutableState.update { it.copy(sessionDate = value) } }
+    fun deleteSession(id: String) = save { repo.deleteSession(id) }
     fun clearError() { mutableState.update { it.copy(error = null) } }
 
     fun saveExercise() {
@@ -107,7 +116,18 @@ class ExerciseViewModel(private val repo: WorkoutRepository) : ScreenModel {
     fun deleteRoutine(id: String) = save { repo.deleteRoutine(id) }
     fun saveRoutine() {
         val routine = state.value.routineDraft?.build() ?: return
-        save { repo.saveRoutine(routine); editRoutine(null) }
+        val session = state.value.editingSession
+        val date = if (session != null) com.ataraxia.ui.parseRecordDate(state.value.sessionDate) ?: return else null
+        if (date != null && date > Clock.System.todayIn(TimeZone.currentSystemDefault())) return
+        save {
+            if (session == null) repo.saveRoutine(routine)
+            else {
+                val completedAt = if (session.date == date.toString()) session.completedAt
+                    else date!!.atTime(12, 0).toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                repo.updateSession(session.copy(routine = routine, date = date.toString(), completedAt = completedAt))
+            }
+            editRoutine(null)
+        }
     }
     fun start(routine: WorkoutRoutine) {
         if (state.value.active != null) return

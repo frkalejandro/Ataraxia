@@ -25,8 +25,15 @@ import com.ataraxia.notifications.*
 import org.koin.compose.koinInject
 import com.ataraxia.ui.TimerNotificationHint
 import com.ataraxia.ui.WellnessSection
+import com.ataraxia.ui.SectionTopAppBar
 import kotlinx.coroutines.delay
-import kotlinx.datetime.Clock
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.*
+import com.ataraxia.domain.model.FocusRecord
+import com.benasher44.uuid.uuid4
 
 class FocusController(
     initial: FocusTimer,
@@ -49,6 +56,17 @@ class FocusController(
             }
         }
     var intention by mutableStateOf("")
+
+    fun prepareFinish(now: Long): Int {
+        timer = timer.pause(now)
+        return if (timer.phase == FocusPhase.FOCUS) timer.durationSeconds - timer.remainingSeconds else 0
+    }
+
+    fun finish() {
+        timer = FocusTimer(focusMinutes = timer.focusMinutes, remainingSeconds = timer.focusMinutes * 60,
+            completedSessions = timer.completedSessions)
+        intention = ""
+    }
 }
 
 val LocalFocusController = staticCompositionLocalOf<FocusController> { error("Falta el temporizador") }
@@ -88,6 +106,11 @@ fun FocusScreen() {
     val controller = LocalFocusController.current
     val timer = controller.timer
     val running = timer.deadlineMillis != null
+    val repository: FocusRepository = koinInject()
+    val scope = rememberCoroutineScope()
+    var finishSeconds by remember { mutableStateOf<Int?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var finishError by remember { mutableStateOf<String?>(null) }
     val label = when (timer.phase) {
         FocusPhase.FOCUS -> "Concentración"
         FocusPhase.SHORT_BREAK -> "Descanso corto"
@@ -100,9 +123,9 @@ fun FocusScreen() {
         FocusPhase.SHORT_BREAK -> green
         FocusPhase.LONG_BREAK -> Color(0xFF4D8EDB)
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+    Scaffold(topBar = { SectionTopAppBar(title = "Concentración") }) { padding ->
+    Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Text("Concentración", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Una cosa a la vez. Encuentra tu ritmo.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         WellnessSection("Dale una intención", "Haz espacio para lo importante",
             Icons.Default.AutoAwesome, purple) {
@@ -111,7 +134,7 @@ fun FocusScreen() {
                 singleLine = true, shape = RoundedCornerShape(14.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(15, 25, 50).forEach { minutes ->
-                    FilterChip(selected = timer.focusMinutes == minutes, enabled = !running && timer.phase == FocusPhase.FOCUS,
+                    FilterChip(selected = timer.focusMinutes == minutes, enabled = !running && timer.phase == FocusPhase.FOCUS && timer.remainingSeconds == timer.durationSeconds,
                         onClick = { controller.timer = timer.setMinutes(minutes) }, label = { Text("$minutes min") },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = purple.copy(alpha = 0.15f),
                             selectedLabelColor = MaterialTheme.colorScheme.onSurface),
@@ -150,12 +173,16 @@ fun FocusScreen() {
                     Spacer(Modifier.width(6.dp))
                     Text(if (running) "Pausar" else if (timer.remainingSeconds < timer.durationSeconds) "Continuar" else "Comenzar")
                 }
-                OutlinedButton(onClick = { controller.timer = timer.reset() }, shape = RoundedCornerShape(14.dp)) {
-                    Text("Reiniciar")
+                OutlinedButton(onClick = {
+                    finishError = null
+                    finishSeconds = controller.prepareFinish(Clock.System.now().toEpochMilliseconds())
+                }, enabled = running || timer.remainingSeconds < timer.durationSeconds || timer.phase != FocusPhase.FOCUS || timer.awaitingNext,
+                    shape = RoundedCornerShape(14.dp)) {
+                    Text("Terminar sesión")
                 }
             }
         }
-        WellnessSection("Cada bloque cuenta", "${timer.completedSessions} sesiones completadas",
+        WellnessSection("Ciclo del temporizador", "${timer.completedSessions} bloques completados con el temporizador",
             Icons.Default.CheckCircle, green) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val completedInCycle = timer.completedSessions % 4
@@ -174,5 +201,43 @@ fun FocusScreen() {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TimerNotificationHint()
         }
+        FocusHistoryPanel()
+    }
+    }
+    finishSeconds?.let { seconds ->
+        AlertDialog(
+            onDismissRequest = { if (!saving) finishSeconds = null },
+            title = { Text("Terminar sesión") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (seconds > 0) "Llevas ${seconds / 60} min ${seconds % 60} s de concentración. Puedes guardarlos en tu historial o descartar este bloque."
+                    else "No hay tiempo de concentración pendiente de guardar. Los bloques anteriores se conservan.")
+                Text("El temporizador está pausado.")
+                finishError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            } },
+            confirmButton = {
+                if (seconds > 0) TextButton(enabled = !saving, onClick = {
+                    saving = true
+                    scope.launch {
+                        try {
+                            val now = Clock.System.now()
+                            // Finish the local write and reset together even if the user changes tabs.
+                            withContext(NonCancellable) {
+                                repository.addBlock(FocusRecord(uuid4().toString(), now.toLocalDateTime(TimeZone.currentSystemDefault()).date,
+                                    seconds.toLong(), now.toEpochMilliseconds()))
+                                controller.finish()
+                            }
+                            finishSeconds = null
+                        } catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { finishError = "No se pudo guardar. Tu sesión sigue pausada; vuelve a intentarlo." }
+                        finally { saving = false }
+                    }
+                }) { Text(if (saving) "Guardando…" else "Guardar y terminar") }
+                else TextButton(onClick = { controller.finish(); finishSeconds = null }) { Text("Terminar") }
+            },
+            dismissButton = { Row {
+                TextButton(enabled = !saving, onClick = { finishSeconds = null }) { Text("Volver") }
+                if (seconds > 0) TextButton(enabled = !saving, onClick = { controller.finish(); finishSeconds = null }) { Text("Descartar") }
+            } },
+        )
     }
 }

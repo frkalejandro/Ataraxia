@@ -2,6 +2,15 @@
 
 package com.ataraxia.ui.sleep
 
+import com.ataraxia.ui.SectionTopAppBar
+import com.ataraxia.ui.ConfirmRecordDeletion
+import com.ataraxia.ui.RecordActions
+import com.ataraxia.ui.RecordError
+import com.ataraxia.ui.RecordDateField
+import com.ataraxia.ui.parseRecordDate
+import com.ataraxia.domain.repository.SleepRepository
+import kotlinx.coroutines.CancellationException
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -92,6 +101,9 @@ data class SleepUiState(
     val isLoading: Boolean            = true,
     val showLogSheet: Boolean         = false,
     val showCycleSheet: Boolean       = false,
+    val editing: SleepEntry? = null,
+    val busy: Boolean = false,
+    val error: String? = null,
 )
 
 class SleepViewModel(
@@ -101,6 +113,7 @@ class SleepViewModel(
     private val saveGoal: SaveSleepGoalUseCase,
     private val getStats: GetSleepStatsUseCase,
     private val notificationScheduler: SleepNotificationScheduler,
+    private val repository: SleepRepository,
 ) : ScreenModel {
 
     private val _state = MutableStateFlow(SleepUiState())
@@ -111,7 +124,7 @@ class SleepViewModel(
 
     init {
         screenModelScope.launch {
-            combine(observeEntries(30), observeGoal()) { entries, goal -> entries to goal }
+            combine(observeEntries(Int.MAX_VALUE), observeGoal()) { entries, goal -> entries to goal }
                 .collect { (entries, goal) ->
                     val stats = getStats(7)
                     _state.update {
@@ -144,6 +157,25 @@ class SleepViewModel(
         }
     }
 
+    private fun mutate(action: suspend () -> Unit) {
+        if (state.value.busy) return
+        _state.update { it.copy(busy = true, error = null) }
+        screenModelScope.launch {
+            try { action() }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _state.update { it.copy(error = e.message ?: "No se pudo guardar el cambio.") } }
+            finally { _state.update { it.copy(busy = false) } }
+        }
+    }
+    fun clearError() { _state.update { it.copy(error = null) } }
+    fun onEdit(entry: SleepEntry) { _state.update { it.copy(editing = entry, showLogSheet = true) } }
+    fun onDelete(entry: SleepEntry) = mutate { repository.deleteSleepEntry(entry.id) }
+    fun deleteGoal() = mutate {
+        repository.deleteSleepGoal()
+        notificationScheduler.cancelBedtimeReminders()
+        _state.update { it.copy(showCycleSheet = false) }
+    }
+
     fun onLogSleep(
         date: LocalDate,
         bedtimeHour: Int, bedtimeMin: Int,
@@ -151,7 +183,8 @@ class SleepViewModel(
         quality: Int,
         note: String,
     ) {
-        screenModelScope.launch {
+        val original = state.value.editing
+        mutate {
             val tz       = TimeZone.currentSystemDefault()
             val bedTotalMin  = bedtimeHour * 60 + bedtimeMin
             val wakeTotalMin = wakeHour * 60 + wakeMin
@@ -171,22 +204,22 @@ class SleepViewModel(
                 (wakeTotalMin - bedTotalMin)
             saveEntry(
                 SleepEntry(
-                    id              = uuid4().toString(),
+                    id              = original?.id ?: uuid4().toString(),
                     date            = date,
                     bedtime         = bedtime,
                     wakeTime        = wake,
                     durationMinutes = duration,
                     quality         = quality,
                     note            = note,
-                    createdAt       = Clock.System.now(),
+                    createdAt       = original?.createdAt ?: Clock.System.now(),
                 )
             )
-            _state.update { it.copy(showLogSheet = false) }
+            _state.update { it.copy(showLogSheet = false, editing = null) }
         }
     }
 
     fun onSaveCycleGoal(wakeHour: Int, wakeMin: Int, cycles: Int, fallAsleepOffset: Int) {
-        screenModelScope.launch {
+        mutate {
             val options     = calcSleepOptions(wakeHour, wakeMin, fallAsleepOffset)
             val chosen      = options.firstOrNull { it.cycles == cycles } ?: options[1]
             val (bH, bM)    = minutesToHM(chosen.bedAtMinutes)
@@ -215,8 +248,8 @@ class SleepViewModel(
         }
     }
 
-    fun showLogSheet()    { _state.update { it.copy(showLogSheet    = true) } }
-    fun hideLogSheet()    { _state.update { it.copy(showLogSheet    = false) } }
+    fun showLogSheet()    { _state.update { it.copy(showLogSheet    = true, editing = null) } }
+    fun hideLogSheet()    { _state.update { it.copy(showLogSheet    = false, editing = null) } }
     fun showCycleSheet()  { _state.update { it.copy(showCycleSheet  = true) } }
     fun hideCycleSheet()  { _state.update { it.copy(showCycleSheet  = false) } }
 }
@@ -234,8 +267,8 @@ class SleepScreen : Screen {
 
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text("Sueño", fontWeight = FontWeight.SemiBold) },
+                SectionTopAppBar(
+                    title = "Sueño",
                     actions = {
                         // Botón para configurar ciclos
                         IconButton(onClick = vm::showCycleSheet) {
@@ -292,7 +325,10 @@ class SleepScreen : Screen {
                     }
                 } else {
                     items(state.entries, key = { it.id }) { entry ->
-                        SleepEntryCard(entry, goal = state.goal)
+                        SleepEntryCard(entry, goal = state.goal) {
+                            RecordActions("el registro del ${entry.date}", enabled = !state.busy,
+                                onEdit = { vm.onEdit(entry) }, onDelete = { vm.onDelete(entry) })
+                        }
                     }
                 }
                 item { Spacer(Modifier.height(80.dp)) }
@@ -301,6 +337,7 @@ class SleepScreen : Screen {
 
         if (state.showLogSheet) {
             LogSleepSheet(
+                initial = state.editing, busy = state.busy,
                 goal      = state.goal,
                 onDismiss = vm::hideLogSheet,
                 onSave    = { d, bh, bm, wh, wm, q, n ->
@@ -311,13 +348,16 @@ class SleepScreen : Screen {
 
         if (state.showCycleSheet) {
             CycleConfigSheet(
+                busy = state.busy,
                 currentGoal = state.goal,
                 onDismiss   = vm::hideCycleSheet,
+                onDelete    = vm::deleteGoal,
                 onSave      = { wH, wM, cycles, offset ->
                     vm.onSaveCycleGoal(wH, wM, cycles, offset)
                 },
             )
         }
+        RecordError(state.error, vm::clearError)
     }
 }
 
@@ -625,7 +665,7 @@ private fun StatPill(
 // ─────────────────────────────────────────────
 
 @Composable
-private fun SleepEntryCard(entry: SleepEntry, goal: SleepGoal?) {
+private fun SleepEntryCard(entry: SleepEntry, goal: SleepGoal?, actions: @Composable () -> Unit) {
     val target = ((goal?.targetHours ?: 7.5f) * 60).toInt()
     val ok = entry.durationMinutes >= target
     val accent = if (ok) Color(0xFF4CAF82) else Color(0xFFE05252)
@@ -683,6 +723,7 @@ private fun SleepEntryCard(entry: SleepEntry, goal: SleepGoal?) {
                     }
                 }
             }
+            actions()
         }
     }
 }
@@ -694,10 +735,13 @@ private fun SleepEntryCard(entry: SleepEntry, goal: SleepGoal?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CycleConfigSheet(
+    busy: Boolean,
     currentGoal: SleepGoal?,
     onDismiss: () -> Unit,
     onSave: (Int, Int, Int, Int) -> Unit,
+    onDelete: () -> Unit,
 ) {
+    var confirmDelete by remember { mutableStateOf(false) }
     var wakeH by remember { mutableStateOf(currentGoal?.wakeTime?.hour ?: 7) }
     var wakeM by remember { mutableStateOf(currentGoal?.wakeTime?.minute ?: 0) }
     var fallAsleepOffset by remember { mutableStateOf(15) }
@@ -712,7 +756,7 @@ private fun CycleConfigSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
@@ -910,14 +954,32 @@ private fun CycleConfigSheet(
 
             Button(
                 onClick = { onSave(wakeH, wakeM, selectedCycles, fallAsleepOffset) },
+                enabled = !busy,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
             ) {
                 Text("Guardar meta de sueño", fontWeight = FontWeight.SemiBold)
             }
+            if (currentGoal != null) {
+                TextButton(
+                    onClick = { confirmDelete = true },
+                    enabled = !busy,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                ) {
+                    Text("Borrar meta de sueño actual", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
     }
+    if (confirmDelete) ConfirmRecordDeletion(
+        name = "la meta de sueño",
+        message = "Se borrará la meta y se cancelarán sus recordatorios. Los registros de sueño se conservarán.",
+        enabled = !busy,
+        onDismiss = { confirmDelete = false },
+        onConfirm = { confirmDelete = false; onDelete() },
+    )
 }
 
 @Composable
@@ -1044,17 +1106,22 @@ private fun TimeWheel(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LogSleepSheet(
+    initial: SleepEntry?,
+    busy: Boolean,
     goal: SleepGoal?,
     onDismiss: () -> Unit,
     onSave: (LocalDate, Int, Int, Int, Int, Int, String) -> Unit,
 ) {
     val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-    var bedH by remember { mutableStateOf(goal?.bedtime?.hour ?: 22) }
-    var bedM by remember { mutableStateOf(goal?.bedtime?.minute ?: 30) }
-    var wakeH by remember { mutableStateOf(goal?.wakeTime?.hour ?: 7) }
-    var wakeM by remember { mutableStateOf(goal?.wakeTime?.minute ?: 0) }
-    var quality by remember { mutableStateOf(3) }
-    var note by remember { mutableStateOf("") }
+    val tz = TimeZone.currentSystemDefault()
+    var dateText by remember { mutableStateOf((initial?.date ?: today).toString()) }
+    val selectedDate = parseRecordDate(dateText)
+    var bedH by remember { mutableStateOf(initial?.bedtime?.toLocalDateTime(tz)?.hour ?: goal?.bedtime?.hour ?: 22) }
+    var bedM by remember { mutableStateOf(initial?.bedtime?.toLocalDateTime(tz)?.minute ?: goal?.bedtime?.minute ?: 30) }
+    var wakeH by remember { mutableStateOf(initial?.wakeTime?.toLocalDateTime(tz)?.hour ?: goal?.wakeTime?.hour ?: 7) }
+    var wakeM by remember { mutableStateOf(initial?.wakeTime?.toLocalDateTime(tz)?.minute ?: goal?.wakeTime?.minute ?: 0) }
+    var quality by remember { mutableStateOf(initial?.quality ?: 3) }
+    var note by remember { mutableStateOf(initial?.note ?: "") }
 
     val durationMin = remember(bedH, bedM, wakeH, wakeM) {
         val b = bedH * 60 + bedM
@@ -1066,7 +1133,7 @@ private fun LogSleepSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
@@ -1081,11 +1148,15 @@ private fun LogSleepSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Registrar noche",
+                if (initial == null) "Registrar noche" else "Editar registro de sueño",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
 
+            RecordDateField(dateText, { dateText = it }, "Fecha de despertar (AAAA-MM-DD)")
+            if (selectedDate != null && selectedDate > today) {
+                Text("La fecha de despertar no puede ser futura.", color = MaterialTheme.colorScheme.error)
+            }
             LogTimeSelector(
                 title = "Me acosté",
                 hour = bedH,
@@ -1157,13 +1228,15 @@ private fun LogSleepSheet(
             )
 
             Button(
-                onClick = { onSave(today, bedH, bedM, wakeH, wakeM, quality, note) },
+                onClick = { selectedDate?.let { onSave(it, bedH, bedM, wakeH, wakeM, quality, note) } },
+                enabled = !busy && selectedDate != null && selectedDate <= today,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
             ) {
-                Text("Guardar", fontWeight = FontWeight.SemiBold)
+                Text(if (busy) "Guardando…" else "Guardar", fontWeight = FontWeight.SemiBold)
             }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancelar") }
         }
     }
 }

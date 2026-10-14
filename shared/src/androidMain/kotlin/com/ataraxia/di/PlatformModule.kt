@@ -9,6 +9,7 @@ import org.koin.dsl.module
 
 actual val platformModule = module {
     single { DatabaseDriverFactory() }
+    single<EventNotificationScheduler> { AndroidEventNotificationScheduler(get<Application>()) }
     single<TimerNotificationScheduler> { AndroidTimerNotificationScheduler(get<Application>()) }
     single<HabitNotificationSettings> { AndroidHabitNotificationScheduler(get<Application>()) }
     single<ExerciseReminderSettings> { AndroidExerciseReminderScheduler(get<Application>()) }

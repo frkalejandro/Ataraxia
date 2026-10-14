@@ -1,5 +1,9 @@
 package com.ataraxia.ui.state
 
+import com.ataraxia.ui.SectionTopAppBar
+import com.ataraxia.ui.ConfirmRecordDeletion
+import kotlinx.coroutines.CancellationException
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -279,6 +283,17 @@ class StateViewModel(
         }
     }
 
+    fun deleteEntry(entry: DailyState, onDeleted: () -> Unit) {
+        if (state.value.isSaving) return
+        _state.update { it.copy(isSaving = true, errorMessage = null) }
+        screenModelScope.launch {
+            try { stateRepository.deleteState(entry.id); onDeleted() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(errorMessage = "No se pudo borrar el registro.") } }
+            finally { _state.update { it.copy(isSaving = false) } }
+        }
+    }
+
     private data class LoadedDay(
         val date: LocalDate,
         val dailyState: DailyState?,
@@ -316,11 +331,23 @@ class StateScreen : Screen {
     override fun Content() {
         val vm: StateViewModel = koinScreenModel()
         val state by vm.state.collectAsState()
+        var deleting by remember { mutableStateOf<DailyState?>(null) }
+        deleting?.let { entry ->
+            ConfirmRecordDeletion("el estado del ${entry.date}", "Se borrará este registro de Estado. El registro de sueño se conservará.", !state.isSaving,
+                onDismiss = { deleting = null }, onConfirm = { deleting = null; vm.deleteEntry(entry) {} })
+        }
 
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text("Estado", fontWeight = FontWeight.SemiBold) },
+                SectionTopAppBar(
+                    title = "Estado",
+                    actions = {
+                        state.existingEntry?.let { entry ->
+                            IconButton(onClick = { deleting = entry }, enabled = !state.isSaving) {
+                                Icon(Icons.Default.DeleteOutline, "Borrar registro de Estado")
+                            }
+                        }
+                    },
                 )
             },
         ) { padding ->
@@ -388,7 +415,7 @@ private fun StateContent(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp),
+            .padding(start = 16.dp, top = 12.dp, end = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         DayHeader(

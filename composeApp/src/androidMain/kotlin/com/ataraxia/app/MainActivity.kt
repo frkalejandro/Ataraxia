@@ -46,6 +46,7 @@ class AtaraxiaApplication : Application() {
         AndroidSleepNotificationScheduler(this).rescheduleSavedReminders()
         AndroidExerciseReminderScheduler(this).reschedule()
         AndroidAgendaNotificationScheduler(this).scheduleDailyReminders()
+        com.ataraxia.notifications.AndroidEventNotificationScheduler(this).rescheduleAsync()
         AndroidStateNotificationScheduler(this).scheduleDailyReminder()
     }
 }

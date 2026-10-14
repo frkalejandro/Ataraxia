@@ -45,6 +45,9 @@ VALUES (:id, :date, :bedtimeEpoch, :wakeEpoch, :durationMinutes, :quality, :note
 deleteSleepEntry:
 DELETE FROM SleepEntry WHERE id = :id;
 
+deleteSleepGoal:
+DELETE FROM SleepGoal;
+
 avgDurationLastDays:
 SELECT AVG(durationMinutes) FROM SleepEntry WHERE date >= :since;
 

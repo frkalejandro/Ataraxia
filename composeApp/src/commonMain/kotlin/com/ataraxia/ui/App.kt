@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +23,8 @@ import com.ataraxia.ui.sleep.SleepScreen
 import com.ataraxia.ui.state.StateScreen
 import com.ataraxia.ui.focus.*
 import com.ataraxia.ui.exercise.ExerciseScreen
+import com.ataraxia.ui.finance.FinanceScreen
+import com.ataraxia.ui.reading.*
 import com.ataraxia.domain.repository.WorkoutRepository
 import com.ataraxia.notifications.*
 import org.koin.compose.koinInject
@@ -29,12 +32,18 @@ import org.koin.compose.koinInject
 @Composable
 fun AtaraxiaApp(agendaRequest: Int = 0, timerRequest: Int = 0, requestedTimer: String? = null, stateRequest: Int = 0) {
     val focus = rememberFocusController()
+    val readingStore = rememberReadingStore()
+    var readingPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val reading = remember(readingStore) {
+        ReadingController(readingStore).apply { readingPath?.let(::open) }
+    }
+    SideEffect { readingPath = reading.active?.path }
     val workouts: WorkoutRepository = koinInject()
     val notifications: TimerNotificationScheduler = koinInject()
     LaunchedEffect(workouts) {
         workouts.observeActive().collect { notifications.update(TimerKind.EXERCISE, it?.notification()) }
     }
-    CompositionLocalProvider(LocalFocusController provides focus) {
+    CompositionLocalProvider(LocalFocusController provides focus, LocalReadingController provides reading) {
     MaterialTheme(colorScheme = ataraxiaColorScheme()) {
         TabNavigator(DashboardTab) { navigator ->
             LaunchedEffect(agendaRequest) { if (agendaRequest > 0) navigator.current = AgendaTab }
@@ -54,14 +63,16 @@ fun AtaraxiaApp(agendaRequest: Int = 0, timerRequest: Int = 0, requestedTimer: S
                     if (result == SnackbarResult.ActionPerformed) navigator.current = FocusTab
                 }
             }
+            Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            if (reading.active == null)
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbar) },
                 bottomBar = {
                     BoxWithConstraints {
-                    val navigationWidth = maxOf(maxWidth, 704.dp)
+                    val navigationWidth = maxOf(maxWidth, 880.dp)
                     NavigationBar(modifier = androidx.compose.ui.Modifier.horizontalScroll(rememberScrollState()), tonalElevation = 0.dp) {
                       Row(androidx.compose.ui.Modifier.width(navigationWidth)) {
-                        listOf(DashboardTab, HabitsTab, ExerciseTab, SleepTab, AgendaTab, FocusTab, JournalTab, StateTab).forEach { tab ->
+                        listOf(DashboardTab, HabitsTab, ExerciseTab, SleepTab, AgendaTab, FocusTab, ReadingTab, JournalTab, StateTab, FinanceTab).forEach { tab ->
                             val selected = navigator.current == tab
                             NavigationBarItem(
                                 selected = selected,
@@ -96,9 +107,29 @@ fun AtaraxiaApp(agendaRequest: Int = 0, timerRequest: Int = 0, requestedTimer: S
                     CurrentTab()
                 }
             }
+            if (reading.active != null) FullscreenReader(reading)
+            }
         }
     }
     }
+}
+
+object ReadingTab : AtaraxiaTab {
+    override val icon = Icons.Outlined.MenuBook
+    override val selectedIcon = Icons.Filled.MenuBook
+    override val options
+        @Composable get() = TabOptions(index = 9u, title = "Lectura")
+    @Composable
+    override fun Content() = com.ataraxia.ui.reading.ReadingScreen()
+}
+
+object FinanceTab : AtaraxiaTab {
+    override val icon = Icons.Outlined.AccountBalanceWallet
+    override val selectedIcon = Icons.Filled.AccountBalanceWallet
+    override val options
+        @Composable get() = TabOptions(index = 8u, title = "Finanzas")
+    @Composable
+    override fun Content() = FinanceScreen().Content()
 }
 
 object FocusTab : AtaraxiaTab {

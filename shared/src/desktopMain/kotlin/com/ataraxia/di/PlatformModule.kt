@@ -8,6 +8,7 @@ import org.koin.dsl.module
 
 actual val platformModule = module {
     single { DatabaseDriverFactory() }
+    single<EventNotificationScheduler> { NoOpEventNotificationScheduler() }
     single<TimerNotificationScheduler> { NoOpTimerNotificationScheduler() }
     single<HabitNotificationSettings> { NoOpHabitNotificationSettings() }
     single<ExerciseReminderSettings> { NoOpExerciseReminderSettings() }

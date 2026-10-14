@@ -11,3 +11,13 @@ SELECT coalesce(sum(durationSeconds), 0) FROM CompletedFocusBlock WHERE date = ?
 recordBlock:
 INSERT OR IGNORE INTO CompletedFocusBlock(id, date, durationSeconds, completedAt)
 VALUES (?, ?, ?, ?);
+
+selectBlocks:
+SELECT * FROM CompletedFocusBlock WHERE durationSeconds > 0 ORDER BY date DESC, completedAt DESC;
+
+updateBlock:
+UPDATE CompletedFocusBlock SET date = :date, durationSeconds = :durationSeconds, completedAt = :completedAt
+WHERE id = :id AND durationSeconds > 0;
+
+deleteBlock:
+UPDATE CompletedFocusBlock SET durationSeconds = 0 WHERE id = :id;

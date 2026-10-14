@@ -1,5 +1,11 @@
 package com.ataraxia.ui.habits
 
+import com.ataraxia.ui.SectionTopAppBar
+import com.ataraxia.ui.ConfirmRecordDeletion
+import com.ataraxia.ui.RecordError
+import com.ataraxia.domain.repository.HabitRepository
+import kotlinx.coroutines.CancellationException
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -47,8 +53,12 @@ import kotlinx.datetime.*
 
 data class HabitsUiState(
     val habits: List<HabitWithStatus> = emptyList(),
+    val archived: List<Habit> = emptyList(),
     val isLoading: Boolean            = true,
     val showAddSheet: Boolean         = false,
+    val editing: Habit? = null,
+    val busy: Boolean = false,
+    val error: String? = null,
 )
 
 class HabitsViewModel(
@@ -56,6 +66,7 @@ class HabitsViewModel(
     private val toggleEntry: ToggleHabitEntryUseCase,
     private val saveHabit: SaveHabitUseCase,
     private val archiveHabit: ArchiveHabitUseCase,
+    private val repository: HabitRepository,
 ) : ScreenModel {
 
     private val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
@@ -64,8 +75,8 @@ class HabitsViewModel(
 
     init {
         screenModelScope.launch {
-            observeHabits(today).collect { list ->
-                _state.update { it.copy(habits = list, isLoading = false) }
+            combine(observeHabits(today), repository.observeArchivedHabits()) { list, archived -> list to archived }.collect { (list, archived) ->
+                _state.update { it.copy(habits = list, archived = archived, isLoading = false) }
             }
         }
     }
@@ -74,20 +85,33 @@ class HabitsViewModel(
         screenModelScope.launch { toggleEntry(habitId, today) }
     }
 
-    fun onArchive(habitId: String) {
-        screenModelScope.launch { archiveHabit(habitId) }
+    private fun mutate(action: suspend () -> Unit) {
+        if (state.value.busy) return
+        _state.update { it.copy(busy = true, error = null) }
+        screenModelScope.launch {
+            try { action() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(error = "No se pudo guardar el cambio. Vuelve a intentarlo.") } }
+            finally { _state.update { it.copy(busy = false) } }
+        }
     }
+    fun clearError() { _state.update { it.copy(error = null) } }
+    fun onArchive(habitId: String) = mutate { archiveHabit(habitId) }
+    fun restore(habit: Habit) = mutate { repository.saveHabit(habit.copy(isArchived = false, updatedAt = Clock.System.now())) }
+    fun onDelete(habitId: String) = mutate { repository.deleteHabit(habitId) }
+    fun onEdit(habit: Habit) { _state.update { it.copy(editing = habit, showAddSheet = true) } }
 
     fun onSaveNewHabit(
         title: String, icon: String, color: String,
         freq: HabitFrequency, category: HabitCategory,
         targetDays: List<DayOfWeek>,
     ) {
-        screenModelScope.launch {
+        val original = state.value.editing
+        mutate {
             val now = Clock.System.now()
-            saveHabit(Habit(
-                id         = uuid4().toString(),
-                title      = title,
+            val base = original ?: Habit(id = uuid4().toString(), title = title, createdAt = now, updatedAt = now)
+            saveHabit(base.copy(
+                title      = title.trim(),
                 icon       = icon,
                 color      = color,
                 frequency  = freq,
@@ -97,15 +121,15 @@ class HabitsViewModel(
                     HabitFrequency.WEEKLY,
                     HabitFrequency.CUSTOM -> if (targetDays.isEmpty()) DayOfWeek.entries else targetDays
                 },
-                createdAt  = now,
+                createdAt  = base.createdAt,
                 updatedAt  = now,
             ))
-            _state.update { it.copy(showAddSheet = false) }
+            _state.update { it.copy(showAddSheet = false, editing = null) }
         }
     }
 
-    fun showAddSheet() { _state.update { it.copy(showAddSheet = true) } }
-    fun hideAddSheet() { _state.update { it.copy(showAddSheet = false) } }
+    fun showAddSheet() { _state.update { it.copy(showAddSheet = true, editing = null) } }
+    fun hideAddSheet() { _state.update { it.copy(showAddSheet = false, editing = null) } }
 }
 
 // ─────────────────────────────────────────────
@@ -120,6 +144,8 @@ class HabitsScreen : Screen {
         val state by vm.state.collectAsState()
 
         // Tab seleccionada: 0=General, 1=Mañana, 2=Noche
+        var deleting by remember { mutableStateOf<Habit?>(null) }
+        var showArchived by remember { mutableStateOf(false) }
         var selectedTab by remember { mutableIntStateOf(0) }
         var showReminders by remember { mutableStateOf(false) }
         val reminders: HabitNotificationSettings = koinInject()
@@ -132,7 +158,8 @@ class HabitsScreen : Screen {
 
         Scaffold(
             topBar = {
-                TopAppBar(title = { Text("Hábitos", fontWeight = FontWeight.SemiBold) }, actions = {
+                SectionTopAppBar(title = if (showArchived) "Hábitos archivados" else "Hábitos", actions = {
+                    TextButton(onClick = { showArchived = !showArchived }) { Text(if (showArchived) "Activos" else "Archivados") }
                     if (reminders.supported) IconButton(onClick = { showReminders = true }) {
                         Icon(Icons.Default.Notifications, contentDescription = "Configurar recordatorios de hábitos")
                     }
@@ -197,7 +224,9 @@ class HabitsScreen : Screen {
                     }
                 }}else {
                     val currentCategory = tabs[selectedTab].first
-                    val filtered = state.habits.filter { it.habit.category == currentCategory }
+                    val filtered = if (showArchived) state.archived.filter { it.category == currentCategory }
+                        .map { HabitWithStatus(it, null, 0, 0f) }
+                    else state.habits.filter { it.habit.category == currentCategory }
 
                     if (filtered.isEmpty()) {
                         Box(
@@ -234,7 +263,10 @@ class HabitsScreen : Screen {
                                 HabitCard(
                                     status    = status,
                                     onToggle  = { vm.onToggle(status.habit.id) },
-                                    onArchive = { vm.onArchive(status.habit.id) },
+                                    onArchive = { if (showArchived) vm.restore(status.habit) else vm.onArchive(status.habit.id) },
+                                    onEdit = { vm.onEdit(status.habit) },
+                                    onDelete = { deleting = status.habit },
+                                    enabled = !state.busy,
                                 )
                             }
                             item { Spacer(Modifier.height(80.dp)) }
@@ -244,6 +276,10 @@ class HabitsScreen : Screen {
             }
         }
 
+        deleting?.let { habit ->
+            ConfirmRecordDeletion(habit.title, "Se borrará este hábito y todo su historial de cumplimiento.", !state.busy,
+                onDismiss = { deleting = null }, onConfirm = { vm.onDelete(habit.id); deleting = null })
+        }
         if (showReminders) {
             AlertDialog(onDismissRequest = { showReminders = false },
                 title = { Text("Recordatorios de hábitos") },
@@ -269,12 +305,15 @@ class HabitsScreen : Screen {
 
         if (state.showAddSheet) {
             AddHabitSheet(
+                initial = state.editing,
+                busy = state.busy,
                 onDismiss = vm::hideAddSheet,
                 onSave    = { title, icon, color, freq, cat, days ->
                     vm.onSaveNewHabit(title, icon, color, freq, cat, days)
                 },
             )
         }
+        RecordError(state.error, vm::clearError)
     }
 }
 
@@ -337,6 +376,9 @@ fun HabitCard(
     status: HabitWithStatus,
     onToggle: () -> Unit,
     onArchive: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    enabled: Boolean,
 ) {
     val habit       = status.habit
     val done        = status.todayEntry != null
@@ -384,7 +426,7 @@ fun HabitCard(
                         )
                     }
                     Text(
-                        "${(status.completionRate7d * 100).toInt()}% esta semana",
+                        if (habit.isArchived) "Archivado" else "${(status.completionRate7d * 100).toInt()}% esta semana",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -392,20 +434,22 @@ fun HabitCard(
             }
 
             Box {
-                IconButton(onClick = { showMenu = true }) {
+                IconButton(onClick = { showMenu = true }, enabled = enabled) {
                     Icon(Icons.Default.MoreVert, null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(text = { Text("Editar") }, onClick = { showMenu = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Borrar") }, onClick = { showMenu = false; onDelete() })
                     DropdownMenuItem(
-                        text        = { Text("Archivar") },
+                        text        = { Text(if (habit.isArchived) "Recuperar" else "Archivar") },
                         leadingIcon = { Icon(Icons.Default.Archive, null) },
                         onClick     = { showMenu = false; onArchive() },
                     )
                 }
             }
 
-            IconButton(onClick = onToggle) {
+            if (!habit.isArchived) IconButton(onClick = onToggle, enabled = enabled) {
                 AnimatedContent(targetState = done, label = "toggle") { isDone ->
                     Icon(
                         imageVector        = if (isDone) Icons.Default.CheckCircle
@@ -434,19 +478,21 @@ private val PRESET_COLORS  = listOf(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AddHabitSheet(
+    initial: Habit?,
+    busy: Boolean,
     onDismiss: () -> Unit,
     onSave: (String, String, String, HabitFrequency, HabitCategory, List<DayOfWeek>) -> Unit,
 ) {
-    var title     by remember { mutableStateOf("") }
-    var icon      by remember { mutableStateOf("⭐") }
-    var color     by remember { mutableStateOf("#6C63FF") }
-    var frequency by remember { mutableStateOf(HabitFrequency.DAILY) }
-    var category  by remember { mutableStateOf(HabitCategory.GENERAL) }
-    val selectedDays = remember { mutableStateListOf<DayOfWeek>() }
+    var title     by remember { mutableStateOf(initial?.title ?: "") }
+    var icon      by remember { mutableStateOf(initial?.icon ?: "⭐") }
+    var color     by remember { mutableStateOf(initial?.color ?: "#6C63FF") }
+    var frequency by remember { mutableStateOf(initial?.frequency ?: HabitFrequency.DAILY) }
+    var category  by remember { mutableStateOf(initial?.category ?: HabitCategory.GENERAL) }
+    val selectedDays = remember { mutableStateListOf<DayOfWeek>().apply { addAll(initial?.targetDays.orEmpty()) } }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
@@ -460,7 +506,7 @@ private fun AddHabitSheet(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Nuevo hábito", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(if (initial == null) "Nuevo hábito" else "Editar hábito", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
                 value = title, onValueChange = { title = it },
@@ -622,9 +668,10 @@ private fun AddHabitSheet(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape    = RoundedCornerShape(14.dp),
                 colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
-                enabled  = title.isNotBlank() &&
+                enabled  = !busy && title.isNotBlank() &&
                     (frequency != HabitFrequency.CUSTOM || selectedDays.isNotEmpty()),
-            ) { Text("Guardar hábito", fontWeight = FontWeight.SemiBold) }
+            ) { Text(if (busy) "Guardando…" else "Guardar hábito", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancelar") }
         }
     }
 }
